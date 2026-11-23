@@ -1,12 +1,14 @@
 /**
- * dsh-restart — loopback HTTP routes for the web panel.
+ * dsh-restart — authenticated HTTP routes for the web panel.
  *
- * Route family: /api/dsh-restart/*. Every route is loopback-only (127.0.0.1 /
- * ::1, same-origin), matching the other dsh-* panels.
+ * Route family: /api/dsh-restart/*. DSH's WebServer authenticates every route
+ * that does not opt out; only the tiny liveness probe and the two local-only
+ * token handoff routes opt out. All routes keep the same-origin check.
  *
  *   GET  /status          host + live helper + config, plus the last restarts
  *   GET  /probe           tiny liveness probe the page polls while reconnecting
- *   GET  /auth            this process's fresh token URL (stale-tab 401 recovery)
+ *   GET  /auth            this process's fresh token URL (local tab recovery)
+ *   GET  /goto            local-only redirect through the current token
  *   POST /restart         a panel click: hand the restart to the detached helper, then exit
  *   GET  /approval        the restart request an agent filed, waiting for the user
  *   POST /approval        the user's decision (approve → restart, deny → drop it)
@@ -78,30 +80,56 @@ export interface RouteContext {
    * This process's browser URL carrying its launch token.
    *
    * Every `dsh web` process mints a new token, so a tab opened before a restart
-   * holds a token the new host rejects with 401. The Web Connection service owns
-   * the current one; the plugin reads it lazily per request (the service may not
-   * exist at mount, and in headless profiles it never does — the plain origin is
-   * then the best link we can offer).
+   * holds a token the new host rejects with 401. The token provider owns the
+   * current one; the plugin reads it lazily per request. It is returned only to
+   * a local request — a remote caller gets a normal re-login path instead.
    */
   authUrl?: () => string
 }
 
-/** Strict loopback fence for every route (the panel is same-origin only). */
-function isLoopbackRequest(request: IncomingMessage): boolean {
-  const address = request.socket.remoteAddress
-  if (address !== '127.0.0.1' && address !== '::1' && address !== '::ffff:127.0.0.1') return false
+/** Headers a reverse proxy adds when it forwards a request from elsewhere. */
+const FORWARDED_HEADERS = [
+  'x-forwarded-for',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'forwarded',
+  'x-forwarded-host',
+] as const
+
+/** Parse the Host header into a URL, or null when it is missing/odd. */
+function hostUrlOf(request: IncomingMessage): URL | null {
   const host = request.headers.host
-  if (typeof host !== 'string') return false
-  let hostUrl: URL
+  if (typeof host !== 'string' || host === '') return null
   try {
-    hostUrl = new URL(`http://${host}`)
+    return new URL(`http://${host}`)
   } catch {
-    return false
+    return null
   }
-  if (hostUrl.hostname !== '127.0.0.1' && hostUrl.hostname !== 'localhost' && hostUrl.hostname !== '[::1]') {
-    return false
-  }
+}
+
+/** True when the Host header names this machine's loopback interface. */
+function isLoopbackHost(hostUrl: URL): boolean {
+  return hostUrl.hostname === '127.0.0.1' || hostUrl.hostname === 'localhost' || hostUrl.hostname === '[::1]' || hostUrl.hostname === '::1'
+}
+
+/** True when the socket peer is the local machine (including IPv4-mapped IPv6). */
+function isLoopbackAddress(request: IncomingMessage): boolean {
+  const address = request.socket.remoteAddress
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+}
+
+/**
+ * Same-origin guard for every route.
+ *
+ * The Host allow-list used to live here; it rejected the public authority
+ * (`dsh.lessa.top`) before DSH could authenticate the request. The host's
+ * cookie/peer check is now the access control, while this function still stops
+ * a cross-site page from driving a state-changing request.
+ */
+function isSameOriginRequest(request: IncomingMessage): boolean {
   if (request.headers['sec-fetch-site'] === 'cross-site') return false
+  const hostUrl = hostUrlOf(request)
+  if (hostUrl === null) return false
   const origin = request.headers.origin
   if (origin === undefined) return true
   try {
@@ -109,6 +137,30 @@ function isLoopbackRequest(request: IncomingMessage): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Stricter gate for the two deliberately cookie-free token endpoints.
+ *
+ * A request that came through a reverse proxy can have a loopback socket even
+ * though the browser is remote; those forwarding headers disqualify it. The
+ * Host must also be a loopback authority, so `https://dsh.lessa.top/` can never
+ * read the launch token.
+ */
+function isLocalTokenRequest(request: IncomingMessage): boolean {
+  if (!isLoopbackAddress(request)) return false
+  const hostUrl = hostUrlOf(request)
+  if (hostUrl === null || !isLoopbackHost(hostUrl)) return false
+  for (const name of FORWARDED_HEADERS) {
+    if (request.headers[name] !== undefined) return false
+  }
+  return isSameOriginRequest(request)
+}
+
+/** Build an HTTP origin, bracketing IPv6 literals when needed. */
+function httpOrigin(host: string, port: number): string {
+  const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return `http://${authority}:${port}`
 }
 
 /** One JSON response. */
@@ -154,10 +206,10 @@ export interface RestartStatusPayload {
   /** Where the detached recovery console is reachable (after a restart). */
   consoleUrl: string
   /**
-   * This process's fresh launch-token URL, so a tab whose token went stale can
-   * offer a working link instead of dying on the host's plain-text 401.
+   * This process's fresh launch-token URL, returned only to a local request.
+   * A remote page must re-login instead of receiving the token.
    */
-  authUrl: string
+  authUrl?: string
   /** launchd job managing this host, when there is one. */
   launchd: { managed: boolean; label: string; state: string; logFile: string; strategy: string } | null
   /** Restarts requested through this plugin, newest first. */
@@ -198,11 +250,23 @@ async function fetchHelperJson(url: string, timeoutMs = 2_000): Promise<HelperSt
 /** Build the route list for ctx.webServer.register. */
 export function makeRoutes(deps: RouteContext): WebRoute[] {
   const guard = (req: IncomingMessage, res: ServerResponse, method: string): boolean => {
-    if (!isLoopbackRequest(req)) {
-      writeJson(res, 403, { error: 'forbidden: loopback-only' })
+    if (!isSameOriginRequest(req)) {
+      writeJson(res, 403, { error: 'forbidden: cross-origin request' })
       return false
     }
     if (req.method !== method) {
+      writeJson(res, 405, { error: `method not allowed: ${req.method}` })
+      return false
+    }
+    return true
+  }
+
+  const localTokenGuard = (req: IncomingMessage, res: ServerResponse): boolean => {
+    if (!isLocalTokenRequest(req)) {
+      writeJson(res, 403, { error: 'forbidden: local-only token endpoint' })
+      return false
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
       writeJson(res, 405, { error: `method not allowed: ${req.method}` })
       return false
     }
@@ -273,7 +337,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     }
     const reported = fromFile.status?.fallbackPort
     const port = typeof reported === 'number' && reported > 0 ? reported : config.fallbackPort
-    const live = await fetchHelperJson(`http://${deps.host}:${port}/status`, 1_200)
+    const live = await fetchHelperJson(`${httpOrigin(deps.host, port)}/status`, 1_200)
     if (
       live !== null &&
       live.helper === 'dsh-restart' &&
@@ -289,9 +353,10 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.probe,
+      auth: 'anonymous' as const,
       handler: (req: IncomingMessage, res: ServerResponse) => {
-        if (!isLoopbackRequest(req)) {
-          writeJson(res, 403, { error: 'forbidden: loopback-only' })
+        if (!isSameOriginRequest(req)) {
+          writeJson(res, 403, { error: 'forbidden: cross-origin request' })
           return
         }
         if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -310,18 +375,13 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.auth,
+      auth: 'anonymous' as const,
       handler: (req: IncomingMessage, res: ServerResponse) => {
-        // Unauthenticated on purpose: the page that needs the fresh URL is
-        // exactly the one whose cookie/token just went stale, so it must be
-        // able to read this. Loopback-only + same-origin, like every route.
-        if (!isLoopbackRequest(req)) {
-          writeJson(res, 403, { error: 'forbidden: loopback-only' })
-          return
-        }
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          writeJson(res, 405, { error: `method not allowed: ${req.method}` })
-          return
-        }
+        // Unauthenticated on purpose, but local-only: the page that needs the
+        // fresh URL is exactly the one whose cookie/token just went stale. A
+        // remote page must re-login; exposing the launch token to the public
+        // authority would defeat the host's authentication.
+        if (!localTokenGuard(req, res)) return
         writeJson(res, 200, {
           ok: true,
           authUrl: currentAuthUrl(),
@@ -334,20 +394,12 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.goto,
+      auth: 'anonymous' as const,
       handler: (req: IncomingMessage, res: ServerResponse) => {
-        // The never-expiring entry point: a bookmarkable URL that always walks
-        // the browser through the *current* process's token exchange. Without
-        // it, a tab whose cookie is gone can only be rescued by copying a token
-        // URL out of the terminal — the one step a user should never have to do.
-        // Unauthenticated + loopback-only, exactly like `/auth`.
-        if (!isLoopbackRequest(req)) {
-          writeJson(res, 403, { error: 'forbidden: loopback-only' })
-          return
-        }
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          writeJson(res, 405, { error: `method not allowed: ${req.method}` })
-          return
-        }
+        // The local never-expiring entry point: a bookmarkable URL that always
+        // walks the browser through the current process's token exchange.
+        // Remote pages get a normal re-login path instead of this token handoff.
+        if (!localTokenGuard(req, res)) return
         // A *relative* Location on purpose: the browser resolves it against the
         // authority it is already on, so a tab opened as `localhost:3080` keeps
         // that authority. Cookies are per authority, so redirecting such a tab
@@ -364,6 +416,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.status,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'GET')) return
         const { config, exists, file } = await loadConfig()
@@ -385,8 +438,8 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
           configFile: file,
           configExists: exists,
           statusFile: statusPath(),
-          consoleUrl: `http://${deps.host}:${config.fallbackPort}`,
-          authUrl: currentAuthUrl(),
+          consoleUrl: httpOrigin(deps.host, config.fallbackPort),
+          ...(isLocalTokenRequest(req) ? { authUrl: currentAuthUrl() } : {}),
           launchd:
             job === null
               ? null
@@ -409,6 +462,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.restart,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'POST')) return
         const body = (await readJsonBody(req)) ?? {}
@@ -426,14 +480,14 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
           return
         }
         const { config } = await loadConfig()
-        // This route cannot tell a panel click from a curl: every route in this
-        // plugin is loopback-only and unauthenticated by design, and a caller
-        // with shell access can copy any header we could invent. So it does not
-        // pretend to. It records the caller's own `source` claim (default
-        // 'web') as history — useful for review, never a permission — and
-        // leaves the real gate where it can actually work: the tool no longer
-        // restarts anything by itself (see ./approval.ts), and the panel keeps
-        // showing an agent's request until the user decides on it.
+        // This route cannot tell a panel click from a curl: the host already
+        // authenticated the caller through its normal cookie/peer check, and a
+        // caller with shell access can copy any header we could invent. So it
+        // records the caller's own `source` claim (default 'web') as history —
+        // useful for review, never a permission — and leaves the real gate where
+        // it can actually work: the tool no longer restarts anything by itself
+        // (see ./approval.ts), and the panel keeps showing an agent's request
+        // until the user decides on it.
         const source = typeof body.source === 'string' && body.source !== '' ? body.source : 'web'
         const reason = typeof body.reason === 'string' ? body.reason : ''
         const outcome = await requestRestart({
@@ -467,9 +521,10 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.approval,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
-        if (!isLoopbackRequest(req)) {
-          writeJson(res, 403, { error: 'forbidden: loopback-only' })
+        if (!isSameOriginRequest(req)) {
+          writeJson(res, 403, { error: 'forbidden: cross-origin request' })
           return
         }
         if (req.method === 'GET' || req.method === 'HEAD') {
@@ -553,6 +608,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.logs,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'GET')) return
         const params = queryOf(req)
@@ -561,8 +617,14 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
         const which = (params.get('which') ?? 'latest').trim()
         let file: string | null
         if (which === 'latest' || which === 'auto') file = await newestLogFile()
-        else if (which === 'helper') file = statusPath().replace(/status\.json$/, 'pending-spec.json')
-        else file = which.startsWith('/') ? which : null
+        else if (which === 'helper' && isLocalTokenRequest(req)) file = statusPath().replace(/status\.json$/, 'pending-spec.json')
+        else {
+          // Remote callers are authenticated but must not turn this into an
+          // arbitrary-file reader: only files in the plugin's own log list are
+          // selectable. `helper` (the launch spec) is local-only above.
+          const rows = await listLogs(2_000)
+          file = rows.find((row) => row.file === which || row.name === which)?.file ?? null
+        }
         if (file === null) {
           writeJson(res, 200, { ok: true, file: '', exists: false, mtime: '', text: '', lines: [], errorLines: [], logFiles: await listLogs(8) })
           return
@@ -574,6 +636,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.history,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'GET')) return
         const { config } = await loadConfig()
@@ -584,6 +647,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.config,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'POST')) return
         const body = await readJsonBody(req)
@@ -601,6 +665,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.helper,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'GET')) return
         const { config } = await loadConfig()
@@ -609,7 +674,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
           ok: true,
           alive: state.alive,
           ageMs: state.ageMs,
-          consoleUrl: `http://${deps.host}:${config.fallbackPort}`,
+          consoleUrl: httpOrigin(deps.host, config.fallbackPort),
           status: state.status,
         })
       },
@@ -617,10 +682,11 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
     {
       kind: 'exact' as const,
       path: RESTART_API.helperRetry,
+      auth: 'required' as const,
       handler: async (req: IncomingMessage, res: ServerResponse) => {
         if (!guard(req, res, 'POST')) return
         const { config } = await loadConfig()
-        const consoleUrl = `http://${deps.host}:${config.fallbackPort}`
+        const consoleUrl = httpOrigin(deps.host, config.fallbackPort)
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), 2_000)
         try {

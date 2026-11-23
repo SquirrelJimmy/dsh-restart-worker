@@ -1,0 +1,60 @@
+/* The restart trigger is a square twin of the import button that sits on the
+   same New-session row. Keep these values aligned with ImportSessions.module.css
+   so the two controls have identical geometry and theme behaviour. */
+.trigger {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  box-sizing: border-box;
+  border: 0.5px solid transparent;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.trigger.wide {
+  width: 38px;
+  height: 38px;
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-button-elevated-fill);
+}
+
+@media (hover: hover) {
+  .trigger:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  .trigger.wide:hover {
+    background: var(--dsw-alias-button-floating-hover);
+  }
+}
+
+.trigger:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+
+.pendingDot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+  box-shadow: 0 0 0 2px var(--dsw-alias-button-elevated-fill);
+  pointer-events: none;
+}
+
+.popover {
+  position: fixed;
+  z-index: 2147483000;
+  pointer-events: auto;
+}

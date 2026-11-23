@@ -4,6 +4,54 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
+### 兼容性
+
+- 升级到 **DSH 0.2.3-alpha.2**：所有 DSH 开发/peer 包同步到 `0.2.3-alpha.2`，
+  `@deepseek-ai/cordis` 跟随 `~4.2.0-alpha.1`。
+- 兼容声明迁到**顶层** `engines.dsh: ">=0.2.3-alpha.2"`；Node 要求改为
+  `^24.22.3 || >=26.13.1`。
+- 移除对已删除的 `connection.authenticatedUrl` 的依赖；改为监听
+  `webserver/entry-url` 缓存本轮 launch token 地址。
+
+### 变更 (Changed)
+
+- **远程访问放开**：`/probe` 匿名；`/status`、`/restart`、`/approval`、`/logs`、
+  `/history`、`/config`、`/helper` 等常规路由改由 DSH 登录认证，不再要求请求
+  来自 loopback。仍保留 same-origin / `sec-fetch-site` 守卫。
+- **token 仍只给本机**：`/auth`、`/goto` 继续匿名，但新增严格的本机门（loopback
+  socket + loopback Host + 无 `x-forwarded-*` 等转发头）。远程页面 401 时提示重新
+  登录，不再尝试自动换取 token；恢复控制台 `http://127.0.0.1:3099` 仍仅本机可用。
+- **侧栏入口搬家**：从旧的底部 DOM 注入行移到 `sidebar.session.action` 槽位，
+  位于「新会话」行上传按钮左侧，注册 order 100；按钮 38×38（宽版）/36×36
+  （折叠 rail）、14/18 图标，与上传按钮同尺寸、同主题。设置页卡片保留。
+- **暗色模式**：面板、浮层、遮罩、按钮、日志、输入框全部改用 DSH 主题 token
+  （`--dsw-alias-*`、`--dsw-radius-*`、`--dsw-elevation-*`），自动跟随
+  `body[data-ds-dark-theme]`，不再硬编码品牌色/灰色 rgba。
+- 删除旧 `floating.tsx` 的 `[class*="settingsArea"]` 注入、`MutationObserver`
+  重排和右下角浮动球。`entry` 配置保留兼容：`off` 隐藏按钮，`sidebar|ball|both`
+  都渲染侧栏按钮；`ball`/`both` 已废弃。
+
+### 修复 (Fixed)
+
+- `ctx.webServer.port` 在新版类型中可能为空，已加数值/整数校验。
+- 路由与客户端文案同步为「普通路由需登录、token/goto 仅本机」，避免继续宣称
+  全部 loopback-only。
+- overlay 使用 v2 容器/样式命名空间并清理旧容器，避免旧 0.2.x bundle 复用同一
+  id/样式导致暗色页面白底白字；暗色模式增加显式颜色兜底。
+- 修复 overlay 卡片背景 token 被误写为占位符、导致背景声明失效的问题。
+- 修复暗色主题下主按钮使用 `--dsw-alias-label-on-color` 导致白底白字的问题；
+  主按钮文字改用 `--dsw-alias-label-primary-foreground`。
+- 修复侧栏按钮在旧/新 bundle 共存时被旧 overlay 样式干扰的问题。
+
+### 测试 (Tests)
+
+- 重写 `tests/routes.mjs`：auth 元数据、公网 Host 访问需登录路由、跨站/转发头
+  守卫、token 仅本机、`webserver/entry-url` 装配；重写 `tests/client.mjs`：
+  设置卡片 + 侧栏槽位注册、旧 DOM 注入缺席。
+- 共 **274 项断言（八套件）** 通过；`pnpm build`、`pnpm typecheck` 通过。
+
 ## [0.2.1] - 2026-09-29
 
 ### 兼容性

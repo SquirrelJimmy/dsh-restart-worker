@@ -291,8 +291,10 @@ export class RestartApi {
   /**
    * This process's fresh launch-token URL.
    *
-   * Reachable without a cookie on purpose: the page that needs it is the one
-   * whose token just went stale. Never throws — a missing URL degrades to ''.
+   * Loopback-only on purpose: the page that needs it is the one whose token
+   * just went stale, and a public request must never be able to read the
+   * process token. A remote page gets 403 and falls back to the login page.
+   * Never throws — a missing URL degrades to ''.
    */
   async authUrl(timeoutMs = 2_500): Promise<AuthPayload | null> {
     try {

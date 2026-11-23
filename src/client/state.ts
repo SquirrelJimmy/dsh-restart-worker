@@ -23,11 +23,12 @@
  *      the tab regains focus, and drops a persisted failure the moment the host
  *      answers.
  *   2. **Stale launch token.** Every `dsh web` boot mints a new launch token, so
- *      an old tab's URL is refused with 401 once its cookie is gone. Because the
- *      plugin routes are loopback-only and cookie-free, this page can always ask
- *      the host for its *current* token URL and swap it for a cookie **in place**
- *      (same authority as the tab, no navigation), then reload only once the tab
- *      really authenticates. A link remains for the case where even that fails,
+ *      an old tab's URL is refused with 401 once its cookie is gone. The normal
+ *      plugin routes require DSH authentication; on loopback the anonymous
+ *      `/auth` endpoint can still hand back the current token, and this page
+ *      swaps it for a cookie **in place** (same authority as the tab, no
+ *      navigation), then reloads only once the tab really authenticates. A
+ *      remote page cannot read that token: it falls back to the DSH login page,
  *      so a dead cookie can never become a reload into the plain-text 401 page.
  */
 
@@ -427,10 +428,12 @@ async function probeOnce(): Promise<void> {
     clearPersisted()
     if (!authenticated) {
       // Booting fine but this tab's cookie is gone: a reload would land on the
-      // plain-text 401 page, so keep the page alive and show the fresh URL.
+      // plain-text 401 page, so keep the page alive and show the recovery path.
       setState({
         reloadAt: null,
-        note: '宿主已恢复，但本页面的旧 token 已失效（401）——请用下方「永久入口」重新打开（可收藏）。',
+        note: state.authUrl !== ''
+          ? '宿主已恢复，但本页面的登录已失效——请用下方「永久入口」重新打开（可收藏）。'
+          : '宿主已恢复，但本页面的登录已失效——请重新登录 DSH（远程页面无法自动换取 token）。',
       })
       return
     }

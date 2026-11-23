@@ -76,7 +76,13 @@ globalThis.window = {
   },
   __ModuleLoader__: { load: (mod) => { captured = mod } },
 }
-globalThis.document = { visibilityState: 'visible', addEventListener: () => {} }
+globalThis.document = {
+  visibilityState: 'visible',
+  addEventListener: () => {},
+  // The client bundle injects its CSS module once at factory time; report the
+  // style as already present so this test needs no DOM implementation.
+  querySelector: () => ({}),
+}
 
 /** What the fake host currently answers. */
 const scenario = {

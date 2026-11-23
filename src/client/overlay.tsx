@@ -27,46 +27,64 @@ import {
 } from './state.ts'
 
 /** Container id, so a hot reload does not stack overlays. */
-const CONTAINER_ID = 'dsh-restart-overlay-root'
+const CONTAINER_ID = 'dsh-restart-overlay-root-v2'
 
-/** Stylesheet id. */
-const STYLE_ID = 'dsh-restart/overlay.css'
+/** Stylesheet id. Keep this versioned: an older plugin bundle can still be
+ * resident during an in-place upgrade and must not suppress our stylesheet. */
+const STYLE_ID = 'dsh-restart/overlay.v2.css'
 
 /** Accent for primary actions (amber = transient state, red = failure). */
-const ACCENT = '#2b6cb0'
-const DANGER = '#c0392b'
+const ACCENT = 'var(--dsw-alias-brand-primary)'
+const DANGER = 'var(--dsw-alias-state-error-primary)'
 
 const CSS = [
-  '#dsh-restart-overlay-root .dshrst-mask{position:fixed;inset:0;z-index:2147483100;',
-  'background:rgba(12,14,18,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);',
+  '.dshrst-root .dshrst-mask{position:fixed;inset:0;z-index:2147483200;',
+  'background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);',
   'display:flex;align-items:flex-start;justify-content:center;padding:8vh 20px 40px;overflow:auto}',
-  '#dsh-restart-overlay-root .dshrst-card{width:100%;max-width:680px;border-radius:14px;overflow:hidden;',
-  'box-shadow:0 24px 70px rgba(0,0,0,.35);border:1px solid rgba(128,128,128,.28);color:inherit;',
-  'background:var(--dshrst-surface,#fff);display:flex;flex-direction:column}',
-  '#dsh-restart-overlay-root .dshrst-head{display:flex;align-items:center;gap:10px;padding:16px 20px;',
-  'border-bottom:1px solid rgba(128,128,128,.2)}',
-  '#dsh-restart-overlay-root .dshrst-spin{width:15px;height:15px;border-radius:50%;flex:none;',
-  'border:2px solid rgba(128,128,128,.35);border-top-color:' + ACCENT + ';animation:dshrst-spin .8s linear infinite}',
+  '.dshrst-root .dshrst-card{width:100%;max-width:680px;border-radius:var(--dsw-radius-lg);overflow:hidden;',
+  'box-shadow:var(--dsw-elevation-prominent);border:0.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary);',
+  'background:var(--dsw-alias-bg-overlay);display:flex;flex-direction:column}',
+  '.dshrst-root .dshrst-head{display:flex;align-items:center;gap:10px;padding:16px 20px;',
+  'border-bottom:0.5px solid var(--dsw-alias-border-l1)}',
+  '.dshrst-root .dshrst-spin{width:15px;height:15px;border-radius:50%;flex:none;',
+  'border:2px solid var(--dsw-alias-border-l3);border-top-color:' + ACCENT + ';animation:dshrst-spin .8s linear infinite}',
   '@keyframes dshrst-spin{to{transform:rotate(360deg)}}',
-  '#dsh-restart-overlay-root .dshrst-body{padding:16px 20px;display:flex;flex-direction:column;gap:12px}',
-  '#dsh-restart-overlay-root .dshrst-log{margin:0;max-height:220px;overflow:auto;padding:10px 12px;',
-  'border-radius:8px;background:rgba(128,128,128,.10);border:1px solid rgba(128,128,128,.22);',
+  '.dshrst-root .dshrst-body{padding:16px 20px;display:flex;flex-direction:column;gap:12px}',
+  '.dshrst-root .dshrst-log{margin:0;max-height:220px;overflow:auto;padding:10px 12px;',
+  'border-radius:var(--dsw-radius-md);background:color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);',
+  'border:0.5px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);',
   'font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word}',
-  '#dsh-restart-overlay-root .dshrst-actions{display:flex;gap:8px;flex-wrap:wrap}',
-  '#dsh-restart-overlay-root button{font:inherit;font-size:13px;padding:7px 13px;border-radius:7px;',
-  'border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;cursor:pointer}',
-  '#dsh-restart-overlay-root button:hover{border-color:rgba(128,128,128,.65)}',
-  '#dsh-restart-overlay-root button.primary{background:' + ACCENT + ';border-color:' + ACCENT + ';color:#fff}',
-  '#dsh-restart-overlay-root button.danger{background:' + DANGER + ';border-color:' + DANGER + ';color:#fff}',
-  '#dsh-restart-overlay-root .dshrst-err{color:' + DANGER + ';font-weight:600}',
-  '#dsh-restart-overlay-root .dshrst-muted{opacity:.66;font-size:12px}',
-  '#dsh-restart-overlay-root .dshrst-steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}',
-  '#dsh-restart-overlay-root .dshrst-step{padding:2px 9px;border-radius:999px;border:1px solid rgba(128,128,128,.28)}',
-  '#dsh-restart-overlay-root .dshrst-step.on{border-color:' + ACCENT + ';color:' + ACCENT + '}',
-  '#dsh-restart-overlay-root .dshrst-auth{display:flex;flex-direction:column;gap:6px;padding:10px 12px;',
-  'border-radius:8px;border:1px solid rgba(192,57,43,.5);background:rgba(192,57,43,.08)}',
-  '#dsh-restart-overlay-root .dshrst-auth a{color:' + ACCENT + ';font-weight:600;word-break:break-all}',
-  '#dsh-restart-overlay-root .dshrst-auth code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}',
+  '.dshrst-root .dshrst-actions{display:flex;gap:8px;flex-wrap:wrap}',
+  '.dshrst-root button{font:inherit;font-size:13px;padding:7px 13px;border-radius:var(--dsw-radius-sm);',
+  'border:0.5px solid var(--dsw-alias-border-l3);background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer}',
+  '.dshrst-root button:hover{border-color:var(--dsw-alias-border-l1)}',
+  '.dshrst-root button.primary{background:var(--dsw-alias-button-primary-fill);border-color:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}',
+  '.dshrst-root button.danger{background:' + DANGER + ';border-color:' + DANGER + ';color:var(--dsw-alias-label-on-color)}',
+  '.dshrst-root .dshrst-err{color:' + DANGER + ';font-weight:600}',
+  '.dshrst-root .dshrst-muted{color:var(--dsw-alias-label-secondary);font-size:12px}',
+  '.dshrst-root .dshrst-steps{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}',
+  '.dshrst-root .dshrst-step{padding:2px 9px;border-radius:999px;border:0.5px solid var(--dsw-alias-border-l3)}',
+  '.dshrst-root .dshrst-step.on{border-color:' + ACCENT + ';color:' + ACCENT + '}',
+  '.dshrst-root .dshrst-auth{display:flex;flex-direction:column;gap:6px;padding:10px 12px;',
+  'border-radius:var(--dsw-radius-md);border:1px solid ' + DANGER + ';background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent)}',
+  '.dshrst-root .dshrst-auth a{color:' + ACCENT + ';font-weight:600;word-break:break-all}',
+  '.dshrst-root .dshrst-auth code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}',
+  // Explicit dark palette for the overlay. The overlay is mounted on body,
+  // outside the shell's React tree, so a stale or partial token set must not
+  // leave a white card with light text.
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-mask{background:rgba(0,0,0,.62)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-card{background:var(--dsw-alias-bg-overlay,#1b1f24);color:var(--dsw-alias-label-primary,#e6edf3);border-color:var(--dsw-alias-border-l2,#30363d)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-head{border-bottom-color:var(--dsw-alias-border-l2,#30363d)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-log{background:var(--dsw-alias-bg-layer-2,rgba(255,255,255,.06));border-color:var(--dsw-alias-border-l2,#30363d);color:var(--dsw-alias-label-primary,#e6edf3)}',
+  'body[data-ds-dark-theme] .dshrst-root button{border-color:var(--dsw-alias-border-l3,#3a424d);color:var(--dsw-alias-label-primary,#e6edf3)}',
+  'body[data-ds-dark-theme] .dshrst-root button:hover{border-color:var(--dsw-alias-border-l1,#8b949e)}',
+  'body[data-ds-dark-theme] .dshrst-root button.primary{background:var(--dsw-alias-button-primary-fill,#f9fafb);border-color:var(--dsw-alias-button-primary-fill,#f9fafb);color:var(--dsw-alias-label-primary-foreground,#100f0f)}',
+  'body[data-ds-dark-theme] .dshrst-root button.danger{background:var(--dsw-alias-state-error-primary,#c0392b);border-color:var(--dsw-alias-state-error-primary,#c0392b);color:var(--dsw-alias-label-on-color,#fff)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-muted{color:var(--dsw-alias-label-secondary,#9aa4b2)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-step{border-color:var(--dsw-alias-border-l3,#3a424d)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-step.on{border-color:var(--dsw-alias-brand-primary,#2f81f7);color:var(--dsw-alias-brand-primary,#2f81f7)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-auth{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f85149) 10%,transparent);border-color:var(--dsw-alias-state-error-primary,#f85149)}',
+  'body[data-ds-dark-theme] .dshrst-root .dshrst-err{color:var(--dsw-alias-state-error-primary,#f85149)}',
 ].join('')
 
 /** Inject the overlay stylesheet once. */
@@ -98,7 +116,7 @@ function stepIndex(state: RestartState): number {
 
 /** Title for the overlay header. */
 function titleOf(state: RestartState): string {
-  if (state.authRequired) return 'DSH 登录已失效（旧 token）'
+  if (state.authRequired) return 'DSH 登录已失效'
   if (state.phase === 'requesting') return '正在重启 DSH…'
   if (state.phase === 'waiting') return '正在重启 DSH…'
   if (state.phase === 'ready') return 'DSH 已就绪'
@@ -230,23 +248,33 @@ function Overlay() {
           {state.authRequired ? (
             <div className="dshrst-auth">
               <strong>本页面已失去登录（401）</strong>
-              <div className="dshrst-muted">
-                每次 dsh web 启动都会更换 launch token，旧标签页 URL 里的旧 token 会被拒绝。
-                永久入口每次都会换到当前进程的 token，因此可以收藏、永远有效：
-              </div>
-              <a href={STABLE_ENTRY_PATH} target="_top" rel="noreferrer">
-                用永久入口进站
-              </a>
-              <code>{stableEntryUrl()}</code>
-              <div className="dshrst-muted">本次地址（只在这次启动有效，作为兜底）：</div>
               {authUrl !== '' ? (
-                <a href={authUrl} target="_top" rel="noreferrer">
-                  用本次 token 地址打开
-                </a>
+                <>
+                  <div className="dshrst-muted">
+                    每次 dsh web 启动都会更换 launch token，旧标签页 URL 里的旧 token 会被拒绝。
+                    本机永久入口每次都会换到当前进程的 token，因此可以收藏、一直使用：
+                  </div>
+                  <a href={STABLE_ENTRY_PATH} target="_top" rel="noreferrer">
+                    用永久入口进站
+                  </a>
+                  <code>{stableEntryUrl()}</code>
+                  <div className="dshrst-muted">本次地址（只在这次启动有效，作为兜底）：</div>
+                  <a href={authUrl} target="_top" rel="noreferrer">
+                    用本次 token 地址打开
+                  </a>
+                  <code>{authUrl}</code>
+                </>
               ) : (
-                <span className="dshrst-muted">正在读取新地址…（也可在终端查看 `dsh web` 打印的 URL）</span>
+                <>
+                  <div className="dshrst-muted">
+                    当前页面不是本机入口，无法在这里自动换取 launch token。请回到 DSH 登录页重新登录；
+                    也可以在宿主机终端打开 dsh web 打印的地址。
+                  </div>
+                  <a href="/" target="_top" rel="noreferrer">
+                    打开 DSH 登录页
+                  </a>
+                </>
               )}
-              {authUrl !== '' ? <code>{authUrl}</code> : null}
             </div>
           ) : null}
 
@@ -268,20 +296,20 @@ function Overlay() {
 
           <div className="dshrst-actions">
             {state.authRequired ? (
-              <>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    location.href = STABLE_ENTRY_PATH
-                  }}
-                >
-                  用永久入口进站
-                </button>
-                <button type="button" onClick={() => void copyStableEntry()}>
-                  {copied ? '已复制' : '复制永久入口地址'}
-                </button>
-                {authUrl !== '' ? (
+              authUrl !== '' ? (
+                <>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => {
+                      location.href = STABLE_ENTRY_PATH
+                    }}
+                  >
+                    用永久入口进站
+                  </button>
+                  <button type="button" onClick={() => void copyStableEntry()}>
+                    {copied ? '已复制' : '复制永久入口地址'}
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -290,13 +318,21 @@ function Overlay() {
                   >
                     用本次地址打开
                   </button>
-                ) : null}
-                {authUrl !== '' ? (
                   <button type="button" onClick={() => void copyAuthUrl()}>
                     {copied ? '已复制' : '复制本次地址'}
                   </button>
-                ) : null}
-              </>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    location.href = '/'
+                  }}
+                >
+                  打开 DSH 登录页
+                </button>
+              )
             ) : null}
             {state.phase === 'ready' && !state.authRequired ? (
               <button type="button" className="primary" onClick={() => location.reload()}>
@@ -313,7 +349,7 @@ function Overlay() {
             </button>
             {state.fallbackUrl !== '' ? (
               <button type="button" onClick={() => window.open(state.fallbackUrl, '_blank', 'noopener')}>
-                打开恢复控制台
+                打开恢复控制台（仅本机）
               </button>
             ) : null}
             <button type="button" onClick={() => void copy()}>
@@ -350,10 +386,14 @@ export function mountRestartOverlay(): void {
   if (root !== null) return
   if (typeof document === 'undefined') return
   injectStyles()
+  // Remove the 0.2.x overlay container. Older bundles can still be resident
+  // during an in-place upgrade; their white card must not sit behind ours.
+  document.getElementById('dsh-restart-overlay-root')?.remove()
   let container = document.getElementById(CONTAINER_ID)
   if (container === null) {
     container = document.createElement('div')
     container.id = CONTAINER_ID
+    container.className = 'dshrst-root'
     container.dataset.plugin = 'dsh-restart'
     document.body.appendChild(container)
   }

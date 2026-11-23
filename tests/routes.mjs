@@ -35,9 +35,9 @@ function check(label, condition, detail = '') {
 }
 
 /** Minimal IncomingMessage stand-in (async-iterable so body reads work). */
-function makeReq({ method = 'GET', url = '/', host = '127.0.0.1:3080', body = null, remote = '127.0.0.1', origin } = {}) {
+function makeReq({ method = 'GET', url = '/', host = '127.0.0.1:3080', body = null, remote = '127.0.0.1', origin, headers: extraHeaders = {} } = {}) {
   const chunks = body === null ? [] : [Buffer.from(JSON.stringify(body))]
-  const headers = { host, 'sec-fetch-site': 'same-origin' }
+  const headers = { host, 'sec-fetch-site': 'same-origin', ...extraHeaders }
   if (origin !== undefined) headers.origin = origin
   return {
     method,
@@ -86,14 +86,28 @@ console.log('route table')
 
 check('every advertised endpoint is registered', routes.length === Object.keys(RESTART_API).length, String(routes.length))
 check('route paths are exact', routes.every((route) => route.kind === 'exact'))
+const anonymousRoutes = new Set([RESTART_API.probe, RESTART_API.auth, RESTART_API.goto])
+check(
+  'only probe/auth/goto are anonymous',
+  routes.every((route) => route.auth === (anonymousRoutes.has(route.path) ? 'anonymous' : 'required')),
+  routes.map((route) => `${route.path}=${route.auth}`).join(', '),
+)
 
 console.log('guards')
 
-const foreign = await call(routes, RESTART_API.status, { remote: '10.0.0.5' })
-check('a non-loopback caller is refused', foreign.status === 403, String(foreign.status))
+// A public Host reaches /status through DSH authentication; the route itself
+// no longer rejects it. The auth metadata is asserted above.
+const publicStatus = await call(routes, RESTART_API.status, { host: 'dsh.lessa.top', remote: '10.0.0.5' })
+check('a public Host can reach the authenticated status route', publicStatus.status === 200, String(publicStatus.status))
+check('a public status does not leak the launch token', publicStatus.json.authUrl === undefined, String(publicStatus.json.authUrl))
 
 const crossSite = await call(routes, RESTART_API.status, { origin: 'https://evil.example' })
 check('a cross-site origin is refused', crossSite.status === 403, String(crossSite.status))
+
+const forwarded = await call(routes, RESTART_API.auth, {
+  headers: { 'x-forwarded-for': '203.0.113.7' },
+})
+check('a forwarded request cannot read the token even from loopback', forwarded.status === 403, String(forwarded.status))
 
 const sameOrigin = await call(routes, RESTART_API.probe, { origin: 'http://127.0.0.1:3080', host: '127.0.0.1:3080' })
 check('a same-origin caller is allowed', sameOrigin.status === 200, String(sameOrigin.status))
@@ -122,14 +136,14 @@ check('status lists the endpoints', status.json.endpoints.restart === RESTART_AP
 check('status has no live helper', status.json.helperAlive === false)
 check('status starts with empty history', Array.isArray(status.json.history) && status.json.history.length === 0)
 
-console.log('auth url (stale-tab 401 recovery)')
+console.log('auth url (local stale-tab recovery)')
 
 const authRoute = await call(routes, RESTART_API.auth)
-check('auth route answers without a cookie', authRoute.status === 200 && authRoute.json.ok === true)
+check('auth route answers without a cookie on loopback', authRoute.status === 200 && authRoute.json.ok === true)
 check('auth route degrades to an empty URL with no provider', authRoute.json.authUrl === '', authRoute.json.authUrl)
-check('auth route echoes the origin', authRoute.json.origin === 'http://127.0.0.1:4321', authRoute.json.origin)
+check('auth route echoes the base URL', authRoute.json.origin === 'http://127.0.0.1:4321', authRoute.json.origin)
 check('auth route reports this process', authRoute.json.pid === process.pid)
-check('status carries the (absent) auth URL', status.json.authUrl === '', String(status.json.authUrl))
+check('status carries the (absent) auth URL locally', status.json.authUrl === '', String(status.json.authUrl))
 
 // The provider must be read per request, never pinned at mount: `dsh web` mints
 // a new launch token on every boot, so a URL cached at mount would itself go stale.
@@ -141,20 +155,26 @@ const authRoutes = makeRoutes({
   authUrl: () => liveToken,
 })
 const firstAuth = await call(authRoutes, RESTART_API.auth)
-check('the current token URL is served', firstAuth.json.authUrl === liveToken, firstAuth.json.authUrl)
+check('the current token URL is served locally', firstAuth.json.authUrl === liveToken, firstAuth.json.authUrl)
 liveToken = 'http://127.0.0.1:4321/?token=SECOND'
 const secondAuth = await call(authRoutes, RESTART_API.auth)
 check('a changed token is reflected immediately (not cached)', secondAuth.json.authUrl === liveToken, secondAuth.json.authUrl)
 const statusWithAuth = await call(authRoutes, RESTART_API.status)
-check('status also carries the current token URL', statusWithAuth.json.authUrl === liveToken, statusWithAuth.json.authUrl)
+check('local status carries the current token URL', statusWithAuth.json.authUrl === liveToken, statusWithAuth.json.authUrl)
+const publicStatusWithAuth = await call(authRoutes, RESTART_API.status, { host: 'dsh.lessa.top', remote: '10.0.0.5' })
+check('public status never carries the token URL', publicStatusWithAuth.json.authUrl === undefined, String(publicStatusWithAuth.json.authUrl))
 check('the auth route is registered', RESTART_API.auth === '/api/dsh-restart/auth')
 
 const authForeign = await call(authRoutes, RESTART_API.auth, { remote: '10.0.0.5' })
 check('the auth route stays loopback-only', authForeign.status === 403, String(authForeign.status))
+const authPublic = await call(authRoutes, RESTART_API.auth, { host: 'dsh.lessa.top' })
+check('the auth route refuses a public Host', authPublic.status === 403, String(authPublic.status))
+const authForwarded = await call(authRoutes, RESTART_API.auth, { headers: { 'x-forwarded-host': 'dsh.lessa.top' } })
+check('the auth route refuses forwarded requests', authForwarded.status === 403, String(authForwarded.status))
 const authPost = await call(authRoutes, RESTART_API.auth, { method: 'POST' })
 check('POST /auth is refused (405)', authPost.status === 405, String(authPost.status))
 
-console.log('stable entry (the address worth bookmarking)')
+console.log('stable entry (the address worth bookmarking locally)')
 
 check('the goto route is registered', RESTART_API.goto === '/api/dsh-restart/goto')
 
@@ -179,6 +199,8 @@ check(
 
 const gotoForeign = await call(authRoutes, RESTART_API.goto, { remote: '10.0.0.5' })
 check('the goto route stays loopback-only', gotoForeign.status === 403, String(gotoForeign.status))
+const gotoPublic = await call(authRoutes, RESTART_API.goto, { host: 'dsh.lessa.top' })
+check('the goto route refuses a public Host', gotoPublic.status === 403, String(gotoPublic.status))
 const gotoPost = await call(authRoutes, RESTART_API.goto, { method: 'POST' })
 check('POST /goto is refused (405)', gotoPost.status === 405, String(gotoPost.status))
 
@@ -188,6 +210,15 @@ const logs = await call(routes, RESTART_API.logs)
 check('logs is ok even with no log files', logs.json.ok === true)
 check('logs reports no file yet', logs.json.exists === false, String(logs.json.exists))
 check('logs still returns the directory listing', Array.isArray(logs.json.logFiles))
+
+await mkdir(path.join(HOME, 'logs'), { recursive: true })
+await writeFile(path.join(HOME, 'logs', 'remote.log'), 'hello from the log\n')
+const selectedLog = await call(routes, RESTART_API.logs, { url: `${RESTART_API.logs}?which=remote.log` })
+check('a named log in the plugin directory is selectable', selectedLog.json.file.endsWith('remote.log'))
+check('...and its content is served', selectedLog.json.text.includes('hello from the log'))
+const arbitraryLog = await call(routes, RESTART_API.logs, { url: `${RESTART_API.logs}?which=/etc/passwd` })
+check('an arbitrary absolute path is refused', arbitraryLog.json.file === '', String(arbitraryLog.json.file))
+check('...and no content leaks', arbitraryLog.json.text === '', arbitraryLog.json.text)
 
 const history = await call(routes, RESTART_API.history)
 check('history is ok', history.json.ok === true && Array.isArray(history.json.history))
@@ -318,53 +349,71 @@ check('unknown keys are ignored, not fatal', badBody.status === 200)
 const reset = await call(routes, RESTART_API.config, { method: 'POST', body: { reset: true } })
 check('config reset restores defaults', reset.json.config.bootTimeoutMs === 120_000, String(reset.json.config.bootTimeoutMs))
 
-console.log('plugin wiring (connection → fresh token URL)')
+console.log('plugin wiring (webserver → current token URL)')
 
-// The route must read the Web Connection service lazily, so `apply` is driven
-// with a fake context here — this is the only place the host half's wiring to
-// the launch-token provider is exercised without restarting a real host.
+// `apply` is driven with a fake context here: this is the only place the host
+// half's wiring to the token provider is exercised without restarting a host.
+// DSH 0.2.3 no longer exposes connection.authenticatedUrl; the token plugin
+// publishes its URL through the `webserver/entry-url` event instead.
 {
-  const registered = []
-  const fakeCtx = (connection) => ({
-    webServer: {
-      port: 4321,
-      register: (route) => {
-        registered.push(route)
+  const makeFakeCtx = (registered) => {
+    const listeners = new Map()
+    return {
+      webServer: {
+        port: 4321,
+        host: '127.0.0.1',
+        getOrigin: () => 'http://127.0.0.1:4321',
+        register: (route) => {
+          registered.push(route)
+          return () => {}
+        },
+      },
+      tools: { register: () => () => {} },
+      systemPrompt: { section: () => () => {} },
+      effect: (fn) => {
+        fn()
         return () => {}
       },
-    },
-    tools: { register: () => () => {} },
-    systemPrompt: { section: () => () => {} },
-    effect: (fn) => {
-      fn()
-      return () => {}
-    },
-    get: (serviceName) => (serviceName === 'connection' ? connection : undefined),
-  })
-
-  apply(fakeCtx({ authenticatedUrl: (base) => `${base}/?token=WIRED` }), { announceToAgent: false })
-  const wiredAuth = await call(registered, RESTART_API.auth)
-  check(
-    'apply wires connection.authenticatedUrl into /auth',
-    wiredAuth.json.authUrl === 'http://127.0.0.1:4321/?token=WIRED',
-    wiredAuth.json.authUrl,
-  )
-  const wiredStatus = await call(registered, RESTART_API.status)
-  check('the token URL is also on /status', wiredStatus.json.authUrl === 'http://127.0.0.1:4321/?token=WIRED')
+      on: (event, callback) => {
+        listeners.set(event, callback)
+        return () => {}
+      },
+      emit: (event, ...args) => {
+        const callback = listeners.get(event)
+        if (callback === undefined) throw new Error('no listener for ' + event)
+        callback(...args)
+      },
+    }
+  }
 
   const fallbackRoutes = []
-  const fallbackCtx = fakeCtx(undefined)
-  fallbackCtx.webServer.register = (route) => {
-    fallbackRoutes.push(route)
-    return () => {}
-  }
+  const fallbackCtx = makeFakeCtx(fallbackRoutes)
   apply(fallbackCtx, { announceToAgent: false })
   const fallbackAuth = await call(fallbackRoutes, RESTART_API.auth)
   check(
-    'without a Connection service the plain origin is offered',
+    'without a token entry the plain origin is offered',
     fallbackAuth.json.authUrl === 'http://127.0.0.1:4321',
     fallbackAuth.json.authUrl,
   )
+
+  const wiredRoutes = []
+  const wiredCtx = makeFakeCtx(wiredRoutes)
+  apply(wiredCtx, { announceToAgent: false })
+  wiredCtx.emit('webserver/entry-url', 'http://127.0.0.1:4321', [
+    { label: 'dsh web', url: 'http://127.0.0.1:4321/?token=WIRED', open: true },
+  ])
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const wiredAuth = await call(wiredRoutes, RESTART_API.auth)
+  check(
+    'apply caches the token URL published on webserver/entry-url',
+    wiredAuth.json.authUrl === 'http://127.0.0.1:4321/?token=WIRED',
+    wiredAuth.json.authUrl,
+  )
+  const wiredStatus = await call(wiredRoutes, RESTART_API.status)
+  check('the token URL is also on local /status', wiredStatus.json.authUrl === 'http://127.0.0.1:4321/?token=WIRED')
+  const wiredPublicStatus = await call(wiredRoutes, RESTART_API.status, { host: 'dsh.lessa.top', remote: '10.0.0.5' })
+  check('the public status still omits it', wiredPublicStatus.json.authUrl === undefined)
 }
 
 await rm(HOME, { recursive: true, force: true })

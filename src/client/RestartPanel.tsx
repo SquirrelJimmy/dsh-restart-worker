@@ -8,7 +8,7 @@
  * the lines that look like errors, so a plugin that fails to load is visible
  * without going back to a terminal.
  *
- * Plain React, inline styles only, theme-agnostic, no emoji.
+ * Plain React, inline styles using DSH theme tokens only, no emoji.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
@@ -35,12 +35,14 @@ import {
 /** Module-level API client (stateless; the component closes over it). */
 const api = new RestartApi()
 
-/** Accent for primary actions. */
-const ACCENT = '#2b6cb0'
-/** Failure colour. */
-const DANGER = '#c0392b'
-/** Healthy colour. */
-const OK = '#2f9e5f'
+/** Accent for primary actions (DSH theme token). */
+const ACCENT = 'var(--dsw-alias-brand-primary)'
+/** Failure colour (DSH theme token). */
+const DANGER = 'var(--dsw-alias-state-error-primary)'
+/** Healthy colour (DSH theme token). */
+const OK = 'var(--dsw-alias-state-success-primary)'
+/** In-flight colour (DSH theme token). */
+const WARN = 'var(--dsw-alias-state-warn-primary)'
 
 /** One shared style sheet. */
 const s: Record<string, React.CSSProperties> = {
@@ -50,63 +52,65 @@ const s: Record<string, React.CSSProperties> = {
     gap: '12px',
     maxWidth: '680px',
     padding: '14px 16px',
-    borderRadius: '10px',
-    border: '1px solid rgba(128,128,128,0.3)',
+    borderRadius: 'var(--dsw-radius-lg)',
+    border: '0.5px solid var(--dsw-alias-border-l2)',
     fontSize: '13px',
-    color: 'inherit',
+    color: 'var(--dsw-alias-label-primary)',
     boxSizing: 'border-box',
   },
   floatCard: {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
-    width: '420px',
+    width: 'min(420px, calc(100vw - 24px))',
     maxHeight: '74vh',
     overflowY: 'auto',
     padding: '14px 16px',
-    borderRadius: '12px',
-    border: '1px solid rgba(128,128,128,0.3)',
+    borderRadius: 'var(--dsw-radius-lg)',
+    border: '0.5px solid var(--dsw-alias-border-l2)',
+    background: 'var(--dsw-alias-bg-layer-1)',
+    boxShadow: 'var(--dsw-elevation-prominent)',
     fontSize: '13px',
-    color: 'inherit',
+    color: 'var(--dsw-alias-label-primary)',
     boxSizing: 'border-box',
   },
   head: { display: 'flex', alignItems: 'center', gap: '8px' },
-  dot: { width: 8, height: 8, borderRadius: '50%', flex: 'none', background: '#c9cdd4' },
-  title: { fontWeight: 600, fontSize: '13px', margin: 0, flex: 1 },
+  dot: { width: 8, height: 8, borderRadius: '50%', flex: 'none', background: 'var(--dsw-alias-label-tertiary)' },
+  title: { fontWeight: 600, fontSize: '13px', margin: 0, flex: 1, color: 'var(--dsw-alias-label-primary)' },
   grid: {
     display: 'grid',
     gridTemplateColumns: '76px 1fr',
     gap: '4px 12px',
     fontSize: '12px',
   },
-  label: { opacity: 0.6 },
-  value: { wordBreak: 'break-all' },
+  label: { color: 'var(--dsw-alias-label-secondary)' },
+  value: { color: 'var(--dsw-alias-label-primary)', wordBreak: 'break-all' },
   primary: {
     padding: '9px 14px',
-    borderRadius: '8px',
+    borderRadius: 'var(--dsw-radius-md)',
     border: '1px solid ' + ACCENT,
-    background: ACCENT,
-    color: '#fff',
+    background: 'var(--dsw-alias-button-primary-fill)',
+    color: 'var(--dsw-alias-label-primary-foreground)',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
   },
   danger: {
     padding: '9px 14px',
-    borderRadius: '8px',
+    borderRadius: 'var(--dsw-radius-md)',
     border: '1px solid ' + DANGER,
     background: DANGER,
-    color: '#fff',
+    color: 'var(--dsw-alias-label-on-color)',
     cursor: 'pointer',
     fontSize: '13px',
     fontWeight: 600,
   },
   button: {
     padding: '6px 11px',
-    borderRadius: '7px',
-    border: '1px solid rgba(128,128,128,0.35)',
+    borderRadius: 'var(--dsw-radius-sm)',
+    border: '0.5px solid var(--dsw-alias-border-l3)',
     background: 'transparent',
-    color: 'inherit',
+    color: 'var(--dsw-alias-label-primary)',
     cursor: 'pointer',
     fontSize: '12px',
   },
@@ -116,49 +120,49 @@ const s: Record<string, React.CSSProperties> = {
     maxHeight: '180px',
     overflow: 'auto',
     padding: '9px 11px',
-    borderRadius: '8px',
-    background: 'rgba(128,128,128,0.10)',
-    border: '1px solid rgba(128,128,128,0.22)',
+    borderRadius: 'var(--dsw-radius-md)',
+    background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent)',
+    border: '0.5px solid var(--dsw-alias-border-l1)',
     font: '11.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    color: 'inherit',
+    color: 'var(--dsw-alias-label-primary)',
   },
   error: { color: DANGER, fontWeight: 600, wordBreak: 'break-word' },
-  muted: { opacity: 0.62, fontSize: '12px' },
+  muted: { color: 'var(--dsw-alias-label-secondary)', fontSize: '12px' },
   section: {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
     paddingTop: '10px',
-    borderTop: '1px solid rgba(128,128,128,0.22)',
+    borderTop: '0.5px solid var(--dsw-alias-border-l1)',
   },
   field: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' },
   input: {
     width: '108px',
     padding: '4px 7px',
-    borderRadius: '6px',
-    border: '1px solid rgba(128,128,128,0.35)',
-    background: 'transparent',
-    color: 'inherit',
+    borderRadius: 'var(--dsw-radius-sm)',
+    border: '0.5px solid var(--dsw-alias-border-l3)',
+    background: 'var(--dsw-alias-bg-layer-1)',
+    color: 'var(--dsw-alias-label-primary)',
     fontSize: '12px',
     boxSizing: 'border-box',
   },
   badge: {
     padding: '1px 7px',
     borderRadius: '999px',
-    border: '1px solid rgba(128,128,128,0.35)',
+    border: '0.5px solid var(--dsw-alias-border-l3)',
+    color: 'var(--dsw-alias-label-secondary)',
     fontSize: '11px',
-    opacity: 0.85,
   },
   approvalCard: {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
     padding: '11px 13px',
-    borderRadius: '9px',
+    borderRadius: 'var(--dsw-radius-md)',
     border: '1px solid ' + DANGER,
-    background: 'rgba(192,57,43,0.07)',
+    background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent)',
   },
   approvalTitle: { fontWeight: 700, fontSize: '13px', color: DANGER, margin: 0 },
 }
@@ -487,7 +491,7 @@ export function RestartPanel(props: { variant?: 'settings' | 'floating'; onClose
   return (
     <div style={variant === 'settings' ? s.card : s.floatCard}>
       <div style={s.head}>
-        <span style={{ ...s.dot, background: error !== '' ? DANGER : restarting ? '#e0a13a' : OK }} />
+        <span style={{ ...s.dot, background: error !== '' ? DANGER : restarting ? WARN : OK }} />
         <h3 style={s.title}>重启 DSH</h3>
         <span style={s.badge}>
           {live.authRequired ? '登录失效' : live.phase === 'idle' ? '空闲' : PHASE_LABEL[live.phase] ?? live.phase}
@@ -500,61 +504,84 @@ export function RestartPanel(props: { variant?: 'settings' | 'floating'; onClose
       </div>
 
       {live.authRequired ? (
-        <div style={{ ...s.section, borderTop: 'none', border: '1px solid ' + DANGER, borderRadius: '8px', padding: '10px 12px' }}>
-          <div style={s.error}>本页面已失去登录（401）：旧标签页的 launch token 已失效</div>
-          <div style={s.muted}>
-            每次 dsh web 启动都会更换 launch token。永久入口每次都会换到当前进程的 token，
-            可以收藏、永远有效：
-          </div>
-          <a
-            href={STABLE_ENTRY_PATH}
-            target="_top"
-            rel="noreferrer"
-            style={{ color: ACCENT, fontWeight: 600, wordBreak: 'break-all', fontSize: '12px' }}
-          >
-            用永久入口进站
-          </a>
-          <div style={{ ...s.value, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: '11.5px' }}>
-            {stableEntryUrl()}
-          </div>
-          <div style={s.muted}>本次地址（只在这次启动有效，作为兜底）：</div>
+        <div
+          style={{
+            ...s.section,
+            borderTop: 'none',
+            border: '1px solid ' + DANGER,
+            borderRadius: 'var(--dsw-radius-md)',
+            padding: '10px 12px',
+          }}
+        >
+          <div style={s.error}>本页面已失去登录（401）：启动 token 已失效，或登录 cookie 已过期</div>
           {live.authUrl !== '' ? (
-            <a
-              href={live.authUrl}
-              target="_top"
-              rel="noreferrer"
-              style={{ color: ACCENT, fontWeight: 600, wordBreak: 'break-all', fontSize: '12px' }}
-            >
-              用本次 token 地址打开
-            </a>
-          ) : (
-            <div style={s.muted}>正在读取本次地址…（也可在终端查看 dsh web 打印的 URL）</div>
-          )}
-          {live.authUrl !== '' ? (
-            <div style={{ ...s.value, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: '11.5px' }}>
-              {live.authUrl}
-            </div>
-          ) : null}
-          <div style={s.row}>
-            <button
-              type="button"
-              style={s.button}
-              onClick={() => {
-                void copyText(stableEntryUrl()).then((ok) => setNotice(ok ? '已复制永久入口地址' : '复制失败'))
-              }}
-            >
-              复制永久入口地址
-            </button>
-            {live.authUrl !== '' ? (
-              <button
-                type="button"
-                style={s.button}
-                onClick={() => {
-                  void copyText(live.authUrl).then((ok) => setNotice(ok ? '已复制本次地址' : '复制失败'))
-                }}
+            <>
+              <div style={s.muted}>
+                每次 dsh web 启动都会更换 launch token。本机永久入口每次都会换到当前进程的 token，
+                可以收藏、一直使用：
+              </div>
+              <a
+                href={STABLE_ENTRY_PATH}
+                target="_top"
+                rel="noreferrer"
+                style={{ color: ACCENT, fontWeight: 600, wordBreak: 'break-all', fontSize: '12px' }}
               >
-                复制本次地址
-              </button>
+                用永久入口进站
+              </a>
+              <div style={{ ...s.value, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: '11.5px' }}>
+                {stableEntryUrl()}
+              </div>
+              <div style={s.muted}>本次地址（只在这次启动有效，作为兜底）：</div>
+              <a
+                href={live.authUrl}
+                target="_top"
+                rel="noreferrer"
+                style={{ color: ACCENT, fontWeight: 600, wordBreak: 'break-all', fontSize: '12px' }}
+              >
+                用本次 token 地址打开
+              </a>
+              <div style={{ ...s.value, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: '11.5px' }}>
+                {live.authUrl}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={s.muted}>
+                当前页面不是本机入口，无法在这里自动换取 launch token。请回到 DSH 登录页重新登录；
+                也可以在宿主机终端打开 dsh web 打印的地址。
+              </div>
+              <a
+                href="/"
+                target="_top"
+                rel="noreferrer"
+                style={{ color: ACCENT, fontWeight: 600, wordBreak: 'break-all', fontSize: '12px' }}
+              >
+                打开 DSH 登录页
+              </a>
+            </>
+          )}
+          <div style={s.row}>
+            {live.authUrl !== '' ? (
+              <>
+                <button
+                  type="button"
+                  style={s.button}
+                  onClick={() => {
+                    void copyText(stableEntryUrl()).then((ok) => setNotice(ok ? '已复制永久入口地址' : '复制失败'))
+                  }}
+                >
+                  复制永久入口地址
+                </button>
+                <button
+                  type="button"
+                  style={s.button}
+                  onClick={() => {
+                    void copyText(live.authUrl).then((ok) => setNotice(ok ? '已复制本次地址' : '复制失败'))
+                  }}
+                >
+                  复制本次地址
+                </button>
+              </>
             ) : null}
             <button
               type="button"
@@ -658,13 +685,13 @@ export function RestartPanel(props: { variant?: 'settings' | 'floating'; onClose
             style={s.button}
             onClick={() => window.open(consoleUrl, '_blank', 'noopener')}
           >
-            恢复控制台
+            恢复控制台（仅本机）
           </button>
         ) : null}
       </div>
 
       <div style={s.muted}>
-        点击后旧进程退出、分离的重启助手用完全相同的命令拉起新宿主，本页会自动重连并刷新；若新宿主启动失败，报错会直接显示在上方遮罩与恢复控制台。
+        点击后旧进程退出、分离的重启助手用完全相同的命令拉起新宿主，本页会自动重连并刷新；若新宿主启动失败，报错会直接显示在上方遮罩与恢复控制台（恢复控制台仅本机可打开）。
       </div>
 
       {helperAlive && helper !== null ? (

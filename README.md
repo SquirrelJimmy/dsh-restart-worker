@@ -23,9 +23,9 @@ why a restart request waits for your click by default.
 
 ## Features
 
-- **One click**: the settings card 「重启」 and a sidebar entry next to your other
-  plugin entries. *A human click needs no second confirmation — the click is the
-  consent.*
+- **One click**: the settings card 「重启」 and a sidebar button on the
+  New-session row, immediately left of the upload button. *A human click needs no
+  second confirmation — the click is the consent.*
 - **Human approval gate (on by default)**: when an agent calls `dsh_restart`,
   **nothing is restarted**. It files a request
   (`~/.dsh/dsh-restart/pending-approval.json`, valid for 15 minutes by default),
@@ -33,7 +33,7 @@ why a restart request waits for your click by default.
   - a **red confirmation card** in the settings panel — reason, requester,
     submission time, a live countdown, and two buttons:
     「批准并重启」 / 「拒绝，保持运行」;
-  - a **red dot** on the sidebar restart icon (visible without opening anything);
+  - a **red dot** on the sidebar restart button (visible without opening anything);
   - a **macOS desktop notification**.
   Until you click, the host does nothing at all; an unanswered request simply
   expires. Approving is **single-use**: the request is deleted before the restart
@@ -72,16 +72,16 @@ why a restart request waits for your click by default.
   host is back (or launchd rescued it) the page clears that leftover "boot
   failed" text by itself — it keeps probing a failed state, re-checks on focus,
   and drops a persisted failure the moment the host answers.
-- **Fresh-token self-heal**: every `dsh web` boot mints a new launch token, so an
-  old tab's URL is refused with 401 once its cookie is gone. The page then swaps
-  the current process's token for a cookie **in place** (same authority as the
-  tab, no navigation) and reloads only after the tab really authenticates — a
-  restart ends with the app back on screen, not with an address to copy. If even
-  that fails it falls back to the clickable **「用新 token 地址打开」** link, so a
-  dead cookie can never turn a reload into the host's plain-text 401 page.
-- **Bookmarkable entry**: `GET /api/dsh-restart/goto` always answers 303 with a
-  *relative* Location carrying the current process's token, so the one URL that
-  never expires is also the one that works on any authority.
+- **Fresh-token self-heal on loopback**: every `dsh web` boot mints a new launch
+  token, so an old tab's URL is refused with 401 once its cookie is gone. A local
+  page swaps the current process's token for a cookie **in place** (same
+  authority as the tab, no navigation) and reloads only after the tab really
+  authenticates. A remote page cannot read the token; it is shown a short
+  "sign in again" message and the normal DSH login page.
+- **Bookmarkable local entry**: on loopback, `GET /api/dsh-restart/goto` answers
+  303 with a *relative* Location carrying the current process's token, so the one
+  URL that never expires is also the one that works on any local authority.
+  Remote callers get 403 and re-login; the launch token is never exposed publicly.
 - **The waiting overlay says don't reload manually** (the port is dead for
   ~3–5s, then the page returns by itself): refreshing inside the restart window
   lands on `ERR_CONNECTION_REFUSED`, where the browser has replaced the page and
@@ -107,8 +107,9 @@ why a restart request waits for your click by default.
 2. Restart DSH once so the host half loads — **the last manual restart you
    need**; from then on, restart from the panel.
 
-   **Expected**: the page reconnects and reloads itself; a restart icon appears
-   in the left sidebar and a 「重启」 card in the settings page.
+   **Expected**: the page reconnects and reloads itself; a restart button appears
+   next to the New-session row's upload button, and a 「重启」 card appears in the
+   settings page.
 
 > **Screenshot slot 1 — what it looks like after install**
 > Capture: the settings card at 「设置 → 插件配置 → Web 插件 → 重启」, expanded
@@ -122,9 +123,9 @@ why a restart request waits for your click by default.
 3. Verify it works: the panel shows host facts and the last boot log, which means
    both halves loaded.
 
-> **Screenshot slot 2 — sidebar entry in its shared row**
-> Capture: the sidebar's bottom row with this restart icon beside the other
-> plugin entries (hovering shows the title 「重启 DSH」).
+> **Screenshot slot 2 — restart button beside the upload button**
+> Capture: the New-session row at the top of the sidebar, with the restart button
+> immediately left of the upload button (hovering shows the title 「重启 DSH」).
 > Range: just that row, not the whole window. **No redaction needed.**
 > Suggested file: `docs/images/dsh-restart-02-sidebar.png`
 > After adding it: `![Sidebar entry](docs/images/dsh-restart-02-sidebar.png)`
@@ -186,7 +187,7 @@ editable from the panel):
 | --- | --- | --- |
 | `enabled` | `true` | Master switch (off = no routes, no tools) |
 | `announceToAgent` | `true` | Announce the plugin's tools and behaviour in the system prompt |
-| `entry` | `sidebar` | Entry point: `sidebar` / `ball` / `both` / `off` |
+| `entry` | `sidebar` | Button visibility: `sidebar` (default) or `off`. `ball` / `both` are still accepted for old configs but render the same sidebar button (the floating ball was removed) |
 | `requireApproval` | `true` | **Must an agent-requested restart wait for your click?** Turning it off restores the old "confirm and go" behaviour (not recommended — it removes the gate) |
 | `approvalTtlMinutes` | `15` | How long a pending request stays actionable (1–120; it expires after that) |
 | `notifyOnApproval` | `true` | Post a macOS desktop notification when a request is filed (darwin only) |
@@ -207,23 +208,25 @@ editable from the panel):
 
 ## HTTP surface
 
-All loopback-only (127.0.0.1 / ::1) and same-origin, matching the other `dsh-*`
-panels — everything below lives under `/api/dsh-restart/`:
+Routes live under `/api/dsh-restart/`. Normal routes require DSH
+authentication and carry the same-origin guard; only `/probe`, `/auth` and
+`/goto` opt out. `/auth` and `/goto` are local-only (loopback socket + loopback
+Host, no forwarding headers), because they hand out the current launch token.
 
 | Method | Path | Meaning |
 | --- | --- | --- |
-| GET | `/status` | Host + helper + config + history + the pending request |
-| GET | `/probe` | Tiny liveness probe (polled hard while reconnecting) |
-| GET | `/auth` | This process's fresh token URL (**deliberately cookie-free**, still loopback-only) |
-| GET | `/goto` | **Bookmarkable entry**: 303 to the current token (relative, so cookies stay on this authority) |
-| POST | `/restart` | Hand over the restart; replies 202 before this process exits (the panel button uses this) |
-| GET | `/approval` | The pending agent request + its deadline + the gate switch |
-| POST | `/approval` | Your decision: `{ id, decision: "approve" \| "deny" }`. Approve **consumes the request first**, then hands over |
-| GET | `/logs` | Boot-log tail + the lines that look like errors |
-| GET | `/history` | Restart records |
-| POST | `/config` | Patch the config / `reset: true` |
-| GET | `/helper` | Live helper state, read through the host |
-| POST | `/helper/retry` | Ask a failed helper to try again |
+| GET | `/status` | Host + helper + config + history + the pending request (authenticated; token URL only for a local caller) |
+| GET | `/probe` | Tiny liveness probe (polled hard while reconnecting; anonymous) |
+| GET | `/auth` | This process's fresh token URL (**anonymous but loopback-only**) |
+| GET | `/goto` | **Local bookmarkable entry**: 303 to the current token (relative, so cookies stay on this authority) |
+| POST | `/restart` | Hand over the restart; replies 202 before this process exits (the panel button uses this; authenticated) |
+| GET | `/approval` | The pending agent request + its deadline + the gate switch (authenticated) |
+| POST | `/approval` | Your decision: `{ id, decision: "approve" \| "deny" }`. Approve **consumes the request first**, then hands over (authenticated) |
+| GET | `/logs` | Boot-log tail + the lines that look like errors (authenticated) |
+| GET | `/history` | Restart records (authenticated) |
+| POST | `/config` | Patch the config / `reset: true` (authenticated) |
+| GET | `/helper` | Live helper state, read through the host (authenticated) |
+| POST | `/helper/retry` | Ask a failed helper to try again (authenticated) |
 
 ## How it works
 
@@ -256,22 +259,23 @@ an agent calls dsh_restart (gate on)
 
 ## Compatibility
 
-- **Requires** DeepSeek Harness **≥ 0.1.5-rc.1** (declared as `dsh.engines.dsh`).
-- **Verified against**: **0.1.5-rc.1** and **0.1.7-rc.2** on macOS with Node
-  25.8.1 — host half, browser half and a real restart.
+- **Requires** DeepSeek Harness **≥ 0.2.3-alpha.2** (declared as top-level
+  `engines.dsh`) and Node **`^24.22.3 || >=26.13.1`**.
+- **Built and tested against**: **0.2.3-alpha.2** on Node 26.13.1; the suite
+  covers the host route wiring, the real restart helper and the emitted client
+  bundle. The live web profile has not been updated by this repository's test
+  run, so a profile install + real restart is still the final deployment check.
 - **Platforms**: only **macOS** has actually been exercised. When the host is
   launchd-managed, the helper delegates with `launchctl kickstart -k`; elsewhere
   it falls back to relaunching the same command itself (the launchd path is
   platform-guarded; Linux and Windows are untested). The desktop notification is
   macOS-only as well (elsewhere it is silently skipped — the request itself is
   still on disk).
-- Compatibility is also derived from the union of the `@deepseek-ai/dsh-*`
-  `peerDependencies` ranges, which is what the plugin market displays. **Since this version** the `peerDependencies` range explicitly declares compatibility with **DSH 0.2.0-rc.2** (`^0.2.0-rc.2` is now included), so no compatibility warning appears on 0.2.0-rc.2. No functional change.
 
 ## Tests
 
 ```sh
-pnpm test    # 275 assertions across eight suites
+pnpm test    # 274 assertions across eight suites
 ```
 
 - `smoke` — config store round-trip and clamping, history, log tailing with error
@@ -284,8 +288,9 @@ pnpm test    # 275 assertions across eight suites
   retry, and a successful relaunch, plus the three readiness edges (crash after
   the port answers, silent exit after the port answers, and an error-shaped
   health-check noise line that must not be mistaken for a failure);
-- `routes` — synthetic req/res across every route, including the
-  loopback/cross-site/method guards and the connection→token-URL wiring;
+- `routes` — synthetic req/res across every route: auth metadata, public-Host
+  access to authenticated routes, local-only token endpoints, cross-site and
+  forwarding-header guards, and the `webserver/entry-url` token wiring;
 - `handoff` — end-to-end on fake ports: restart → old process really exits →
   helper relaunches generation 2 → the port answers with a new pid;
 - `launchd` — pid→job matching and observe mode (which must never spawn), plus
@@ -293,7 +298,8 @@ pnpm test    # 275 assertions across eight suites
 - `selfheal` — the real browser bundle with stubbed globals: a persisted "boot
   failed" whose host recovered is cleared on mount, and a 401 page gets the
   current token URL instead of a dead reload;
-- `client` — the browser half's registration and rendering contract.
+- `client` — the browser half's slot registrations (settings card + sidebar
+  action), and the absence of the old DOM injection/fallback ball.
 
 ## Limits
 

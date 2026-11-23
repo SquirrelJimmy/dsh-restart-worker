@@ -24,14 +24,14 @@
 
 ## 能力
 
-- **一键重启**：设置页「重启」卡片、左侧边栏「重启」入口（与其它插件入口并排），
+- **一键重启**：设置页「重启」卡片、左侧「新会话」行上传按钮左侧的重启按钮，
   点一下即完成交接。**本人在面板上点击不需要二次确认——点击本身就是同意。**
 - **用户批准闸门（默认开）**：agent 调 `dsh_restart` **不会重启任何东西**，
   只落一个待批准请求（`~/.dsh/dsh-restart/pending-approval.json`，默认 15 分钟有效）。
   请求会同时出现在三处：
   - 设置页「重启」卡片里的**红色确认卡**：原因、发起方、提交时间、剩余有效时间（倒计时），
     以及「批准并重启」/「拒绝，保持运行」两个按钮；
-  - 侧边栏重启图标上的**红点**（不打开面板也看得见）；
+  - 侧边栏重启按钮上的**红点**（不打开面板也看得见）；
   - 一条 **macOS 桌面通知**。
   在你点之前宿主不会有任何动作，超时未处理请求自动作废。批准是**一次性消费**：
   请求先被删除再执行，所以重复点击、重放请求都不会重启两次。
@@ -69,15 +69,14 @@
 - **旧标签页自愈**：重启失败态只存在于页面（内存 + sessionStorage），所以宿主恢复后
   （自己起来的、或 launchd 救回来的）残留的「启动失败」文案必须自己消失——页面在失败态
   持续探测、标签页重新获得焦点时立刻复查、宿主一应答就丢掉持久化的失败记录，不需要用户刷新。
-- **401 原地换回登录**：每次 `dsh web` 启动都换一个 launch token，旧标签页 URL 里的旧
-  token 在 cookie 失效时会被 401 拒。页面会 `HEAD /` 检出 401，并从**免 cookie 的插件路由**
+- **401 本机原地换回登录**：每次 `dsh web` 启动都换一个 launch token，旧标签页 URL 里的旧
+  token 在 cookie 失效时会被 401 拒。本机页面会 `HEAD /` 检出 401，并从**仅本机可读的插件路由**
   取回本进程当前的 token，然后**在原地**（同一 authority、不跳转）发一次交换请求把 cookie
-  换回来，重新校验确认已认证后才让页面自己刷新回应用——一次重启结束时页面是**自己回来的**，
-  不用复制地址开新标签页。交换失败时才回落到可点击的**「用新 token 地址打开」**链接，所以
-  cookie 存不下也不会把页面带进宿主的纯文本 401 页。
-- **永久入口（可收藏）**：`GET /api/dsh-restart/goto` 永远 303 到本进程当前 token（相对地址）。
-  把它收藏起来就是「永远能进站的那条地址」——cookie 没了、停在纯文本 401 页、重启期间手刷过头，
-  点一下都能回来；401 卡片的主按钮与复制按钮给的就是它。
+  换回来，重新校验确认已认证后才让页面自己刷新回应用。远程页面不能读取 token，会提示重新登录
+  并给出 DSH 登录页，不会把 launch token 暴露到公网。
+- **本机永久入口（可收藏）**：`GET /api/dsh-restart/goto` 在本机永远 303 到本进程当前 token
+  （相对地址）。把它收藏起来就是「本机永远能进站的那条地址」——cookie 没了、停在纯文本 401 页、
+  重启期间手刷过头，点一下都能回来；远程请求会得到 403，需重新登录。
 - **等待期提示「请勿手动刷新」**：重启窗口里自己按刷新会落进浏览器的 `ERR_CONNECTION_REFUSED`
   （那一刻页面已被浏览器错误页替换，插件救不了），所以提示写明「端口会先空约 3–5 秒，本页会自己回来」。
 - **重启历史**：`~/.dsh/dsh-restart/history.json` 记录每次重启的时间、来源、原因、
@@ -99,7 +98,8 @@
 2. 重启一次 DSH 让宿主侧代码加载（**这一次是最后一次手动重启**；装完以后再要重启，
    直接点面板按钮即可）。
 
-   **预期结果**：页面自动重连、自动刷新；左侧边栏出现重启图标，设置页出现「重启」卡片。
+   **预期结果**：页面自动重连、自动刷新；「新会话」行上传按钮左侧出现重启按钮，
+   设置页出现「重启」卡片。
 
 > **截图位 1｜装完的样子**
 > 截：设置页「设置 → 插件配置 → Web 插件 → 重启」展开后的卡片（能看到宿主 pid、版本、
@@ -110,8 +110,8 @@
 
 3. 验证能用：面板里能看到宿主信息与「上次启动日志」，说明宿主半与客户端半都加载成功。
 
-> **截图位 2｜侧边栏入口 + 并排的那一行**
-> 截：左侧边栏底部、与其它插件入口同一行的重启图标（悬停时 title 应显示「重启 DSH」）。
+> **截图位 2｜上传按钮旁的重启按钮**
+> 截：侧边栏顶部「新会话」这一行，重启按钮紧挨在上传按钮左侧（悬停时 title 应显示「重启 DSH」）。
 > 范围：只截那一行，别带整页；**无需打码**。
 > 建议文件名：`docs/images/dsh-restart-02-sidebar.png`
 > 补图后：`![侧边栏入口](docs/images/dsh-restart-02-sidebar.png)`
@@ -168,7 +168,7 @@
 | --- | --- | --- |
 | `enabled` | `true` | 总开关（关闭后不挂载路由与工具） |
 | `announceToAgent` | `true` | 在系统提示里公告插件能力 |
-| `entry` | `sidebar` | 入口位置：`sidebar` / `ball` / `both` / `off` |
+| `entry` | `sidebar` | 按钮是否显示：`sidebar`（默认）或 `off`。旧配置里的 `ball` / `both` 仍可读，但都渲染同一个侧栏按钮（浮动球已移除） |
 | `requireApproval` | `true` | **agent 发起的重启是否必须由你在面板点确认**。关掉 = 恢复「confirm 即执行」的旧行为（不推荐；等于把闸门拆了） |
 | `approvalTtlMinutes` | `15` | 待批准请求的有效期（分钟，1–120）。超时自动作废 |
 | `notifyOnApproval` | `true` | 收到请求时发一条 macOS 桌面通知（仅 darwin） |
@@ -189,22 +189,24 @@
 
 ## HTTP 接口
 
-全部 loopback-only（127.0.0.1 / ::1，同源），沿用其它 dsh-* 面板的守卫：
+路由都在 `/api/dsh-restart/`。常规路由要求 DSH 登录并保留同源守卫；只有 `/probe`、
+`/auth`、`/goto` 显式匿名。`/auth` 与 `/goto` 还要求**仅本机**（loopback socket + loopback
+Host、且没有转发头），因为它们会交出当前 launch token。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/dsh-restart/status` | 宿主 + 助手 + 配置 + 历史 + 当前待批准请求 |
-| GET | `/api/dsh-restart/probe` | 极小存活探针（重连时高频轮询） |
-| GET | `/api/dsh-restart/auth` | 本进程当前 launch token 地址（**故意不要求 cookie**，仍是 loopback-only） |
-| GET | `/api/dsh-restart/goto` | **永久入口**：303 到本进程当前 token（相对地址 ⇒ cookie 换回本 authority）。可收藏、不会过期 |
-| POST | `/api/dsh-restart/restart` | 交接重启，先回 202 再退出本进程（面板按钮走这条） |
-| GET | `/api/dsh-restart/approval` | 当前待批准的重启请求 + 有效期 + 闸门开关 |
-| POST | `/api/dsh-restart/approval` | 你的决定：`{ id, decision: "approve" \| "deny" }`。approve 会**先消费请求**再交接重启 |
-| GET | `/api/dsh-restart/logs` | 启动日志尾部 + 疑似报错行 |
-| GET | `/api/dsh-restart/history` | 重启记录 |
-| POST | `/api/dsh-restart/config` | 改配置 / `reset: true` 恢复默认 |
-| GET | `/api/dsh-restart/helper` | 经宿主读取助手实时状态 |
-| POST | `/api/dsh-restart/helper/retry` | 让失败的助手再试一次 |
+| GET | `/api/dsh-restart/status` | 宿主 + 助手 + 配置 + 历史 + 当前待批准请求（需登录；只有本机请求才带 token 地址） |
+| GET | `/api/dsh-restart/probe` | 极小存活探针（重连时高频轮询；匿名） |
+| GET | `/api/dsh-restart/auth` | 本进程当前 launch token 地址（**匿名但仅本机**） |
+| GET | `/api/dsh-restart/goto` | **本机永久入口**：303 到本进程当前 token（相对地址 ⇒ cookie 换回本 authority）。可收藏、不会过期 |
+| POST | `/api/dsh-restart/restart` | 交接重启，先回 202 再退出本进程（面板按钮走这条；需登录） |
+| GET | `/api/dsh-restart/approval` | 当前待批准的重启请求 + 有效期 + 闸门开关（需登录） |
+| POST | `/api/dsh-restart/approval` | 你的决定：`{ id, decision: "approve" \| "deny" }`。approve 会**先消费请求**再交接重启（需登录） |
+| GET | `/api/dsh-restart/logs` | 启动日志尾部 + 疑似报错行（需登录） |
+| GET | `/api/dsh-restart/history` | 重启记录（需登录） |
+| POST | `/api/dsh-restart/config` | 改配置 / `reset: true` 恢复默认（需登录） |
+| GET | `/api/dsh-restart/helper` | 经宿主读取助手实时状态（需登录） |
+| POST | `/api/dsh-restart/helper/retry` | 让失败的助手再试一次（需登录） |
 
 ## 工作方式
 
@@ -236,18 +238,18 @@ agent 调 dsh_restart（闸门开着）
 
 ## 兼容性
 
-- **要求**：DeepSeek Harness **≥ 0.1.5-rc.1**（即 `package.json` 的 `dsh.engines.dsh`）。
-- **实测通过**：**0.1.5-rc.1** 与 **0.1.7-rc.2**（macOS + Node 25.8.1；宿主半、客户端半、
-  真实重启全流程）。
+- **要求**：DeepSeek Harness **≥ 0.2.3-alpha.2**（顶层 `engines.dsh`），
+  Node **`^24.22.3 || >=26.13.1`**。
+- **构建与测试**：在 **0.2.3-alpha.2** + Node 26.13.1 上通过宿主路由、真实重启助手与
+  构建后的客户端 bundle 测试。尚未把仓库安装进线上 profile，部署前还需更新 profile 并做一次真实重启。
 - **平台**：只在 **macOS** 上实测过。macOS 且宿主由 launchd 托管时走 `launchctl kickstart -k`；
   其它平台自动落到「分离助手自拉起」路径（代码里对 launchd 有平台守卫，Linux / Windows 未实测）。
   桌面通知也只在 macOS 上发出（其它平台静默跳过，请求本身照样落盘）。
-- 兼容性判定也来自 `peerDependencies` 的 `@deepseek-ai/dsh-*` 范围并集（插件市场展示的是这一项）。 **本版起**在 `peerDependencies` 中显式声明兼容 **DSH 0.2.0-rc.2**（官方 DSH 包的版本范围已含 `^0.2.0-rc.2`），在 0.2.0-rc.2 上不会再出现兼容告警；功能与行为无变化。
 
 ## 测试
 
 ```sh
-pnpm test        # 275 项断言，八个套件
+pnpm test        # 274 项断言，八个套件
 ```
 
 - `tests/smoke.mjs` — 配置读写与钳制、历史、日志尾部与报错识别、启动签名、宿主信息；
@@ -258,8 +260,8 @@ pnpm test        # 275 项断言，八个套件
   宿主应答端口后才在插件上崩掉（不得报就绪，且要撤回已报的就绪状态、写入失败报告）、
   应答端口后静默退出（没有任何报错行也要靠存活性判失败）、健康宿主打印错误形状的噪音
   （不得误判为失败）；
-- `tests/routes.mjs` — 合成的 req/res 打全部路由，含 loopback/跨站/方法守卫，以及
-  「`connection` 服务 → `/auth` 新 token 地址」的装配（无该服务时回落纯 origin）；
+- `tests/routes.mjs` — 合成的 req/res 打全部路由：auth 元数据、公网 Host 可访问需登录路由、
+  仅本机的 token 端点、跨站与转发头守卫，以及 `webserver/entry-url` 的 token 装配；
 - `tests/handoff.mjs` — 端到端：假宿主进程 → POST 重启 → 旧进程真的退出 →
   助手用相同命令拉起第二代 → 端口重新应答（新 pid）、`restarted: true`、历史落盘；
 - `tests/launchd.mjs` — launchd 识别（**按 pid 匹配 `launchctl list`**，因为 Node 会把
@@ -268,7 +270,8 @@ pnpm test        # 275 项断言，八个套件
 - `tests/selfheal.mjs` — 用桩替换 sessionStorage/location/fetch，驱动**真实的浏览器 bundle**：
   「构造失败态 → 宿主恢复 → 页面自愈」（挂载即清掉宿主已恢复的失败记录；失败的重启请求在
   宿主应答后自动离开失败态并刷新）与「命中 401 → 取回当前 token 地址、且不刷新进 401 页」；
-- `tests/client.mjs` — 浏览器半的装配与渲染契约（入口、面板、遮罩挂在正确的槽位）。
+- `tests/client.mjs` — 浏览器半的槽位注册（设置卡片 + 侧栏按钮），以及旧 DOM 注入/浮动球
+  已移除的回归检查。
 
 ## 边界
 
