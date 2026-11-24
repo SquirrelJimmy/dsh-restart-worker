@@ -132,6 +132,29 @@ why a restart request waits for your click by default.
 
 ## Usage
 
+### DSH Desktop
+
+The same plugin works in DSH Desktop, with a separate surface because the host
+model is different: Desktop runs the DSH host as a child process, so restarting
+the plugin replaces **the host**, not the Electron app. The window and the
+desktop shell stay open; the page reconnects when the new host answers.
+
+- The sidebar button opens a host drawer on the right instead of the Web
+  popover. It shows the host PID, parent (Electron) PID, port, versions, uptime,
+  helper state and the last restart, and its primary action is
+  「重启 DSH Host」.
+- The settings card switches to the same host summary when the host reports
+  `runtime: desktop`; it is the fallback entry if the sidebar is collapsed.
+- Pending agent requests use the same approval file and `/approval` route. The
+  card says 「批准并重启 Host」 and still requires your click; nothing restarts
+  before that.
+- The recovery console remains local-only (`http://127.0.0.1:3099`). A remote
+  Desktop session that loses its login must sign in again; it cannot read the
+  local token entry.
+
+An app-level update (Electron shell, native dependencies) still needs a full
+quit and reopen. This button only replaces the DSH host process.
+
 ### Restarting it yourself
 
 1. Open 「设置 → 插件配置 → Web 插件 → 重启」 (or click the sidebar restart icon).
@@ -263,8 +286,10 @@ an agent calls dsh_restart (gate on)
   `engines.dsh`) and Node **`^24.22.3 || >=26.13.1`**.
 - **Built and tested against**: **0.2.3-alpha.2** on Node 26.13.1; the suite
   covers the host route wiring, the real restart helper and the emitted client
-  bundle. The live web profile has not been updated by this repository's test
-  run, so a profile install + real restart is still the final deployment check.
+  bundle. The Desktop host path is unit-tested (runtime detection, asar cwd,
+  `ELECTRON_RUN_AS_NODE`) but has not been exercised in a live Desktop build, so
+  a real Desktop click remains the final acceptance step. The live web profile
+  has not been updated by this repository's test run either.
 - **Platforms**: only **macOS** has actually been exercised. When the host is
   launchd-managed, the helper delegates with `launchctl kickstart -k`; elsewhere
   it falls back to relaunching the same command itself (the launchd path is
@@ -275,11 +300,11 @@ an agent calls dsh_restart (gate on)
 ## Tests
 
 ```sh
-pnpm test    # 274 assertions across eight suites
+pnpm test    # 287 assertions across eight suites
 ```
 
 - `smoke` — config store round-trip and clamping, history, log tailing with error
-  detection, launch signature, host identity;
+  detection, Web/Desktop launch signatures, host identity;
 - `approval` — **the gate**: 0600 on disk, a newer request replaces an older one,
   a mismatched id must not execute, approving is single-use (a replay does
   nothing), denying leaves no residue, **an expired request never restarts**,

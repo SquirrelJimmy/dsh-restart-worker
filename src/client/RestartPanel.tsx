@@ -168,7 +168,7 @@ const s: Record<string, React.CSSProperties> = {
 }
 
 /** Human duration from milliseconds. */
-function human(ms: number): string {
+export function human(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '—'
   const total = Math.round(ms / 1000)
   if (total < 60) return `${total} 秒`
@@ -180,7 +180,7 @@ function human(ms: number): string {
 }
 
 /** Local time from an ISO string. */
-function localTime(iso: string): string {
+export function localTime(iso: string): string {
   if (iso === '') return '—'
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
@@ -192,7 +192,7 @@ function localTime(iso: string): string {
 }
 
 /** Phase label for the live helper. */
-const PHASE_LABEL: Record<string, string> = {
+export const PHASE_LABEL: Record<string, string> = {
   'waiting-port-free': '等待旧进程退出',
   starting: '正在启动',
   'waiting-ready': '等待就绪',
@@ -228,21 +228,23 @@ function remaining(expiresAt: string, now: number): string {
  * page's connection, so the destructive button says what it does instead of
  * being an icon, and the safe one is right beside it.
  */
-function ApprovalCard(props: {
+export function ApprovalCard(props: {
   approval: PendingApproval
   busy: boolean
   onDecide: (decision: 'approve' | 'deny') => void
+  /** What is being restarted; Desktop says Host, Web says DSH. */
+  subject?: string
 }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [])
-  const { approval, busy, onDecide } = props
+  const { approval, busy, onDecide, subject = 'DSH' } = props
   return (
     <div style={s.approvalCard}>
       <div style={s.row}>
-        <h4 style={s.approvalTitle}>有一个会话请求重启 DSH（尚未执行）</h4>
+        <h4 style={s.approvalTitle}>有一个会话请求重启 {subject}（尚未执行）</h4>
         <span style={{ marginLeft: 'auto' }} />
         <span style={s.badge}>{remaining(approval.expiresAt, now)} 后失效</span>
       </div>
@@ -264,7 +266,8 @@ function ApprovalCard(props: {
       </div>
       <div style={s.muted}>
         在你点下面任何一个按钮之前，宿主不会有任何动作；超时未处理，请求自动作废。
-        「批准并重启」会立刻中断当前回合与页面连接（本页会自动重连）。
+        「批准并重启{subject === 'DSH Host' ? ' Host' : ''}」会立刻中断当前回合与页面连接
+        （本页会自动重连）。
       </div>
       <div style={s.row}>
         <button
@@ -273,7 +276,7 @@ function ApprovalCard(props: {
           disabled={busy}
           onClick={() => onDecide('approve')}
         >
-          {busy ? '处理中…' : '批准并重启'}
+          {busy ? '处理中…' : `批准并重启${subject === 'DSH Host' ? ' Host' : ''}`}
         </button>
         <button
           type="button"

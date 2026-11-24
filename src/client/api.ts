@@ -51,6 +51,7 @@ export interface HostInfo {
   profile: string
   command: string
   restarted: boolean
+  runtime: 'web' | 'desktop'
   platform: string
   logsDir: string
   statusFile: string

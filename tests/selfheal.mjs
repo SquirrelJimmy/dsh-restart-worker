@@ -125,7 +125,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (url === '/api/dsh-restart/status') {
     return json(200, {
       ok: true,
-      host: { pid: 4321, url: 'http://127.0.0.1:3080' },
+      host: { pid: 4321, url: 'http://127.0.0.1:3080', runtime: 'web' },
       config: { autoReload: true, probeIntervalMs: 1200, showOverlay: true },
       authUrl: scenario.authUrl,
       history: [],

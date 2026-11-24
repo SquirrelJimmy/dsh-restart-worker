@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-24
+
+### 新增 (Added)
+
+- **DSH Desktop host 重启**：新增 `runtime: web | desktop` 检测与 Desktop
+  启动签名。Desktop 下用应用自身可执行文件 + `ELECTRON_RUN_AS_NODE=1` 重放
+  `dsh-desktop-host/lib/cli.js`，只替换 host 子进程，不退出 Electron 主进程；
+  遇到 `.asar` 路径时避免把 asar 当 cwd。
+- **两套 surface**：Web 保留侧栏浮层 + 设置卡；Desktop 新增右侧宿主抽屉，
+  展示宿主/父进程 PID、端口、版本、运行时长、helper 与上次重启，主按钮为
+  「重启 DSH Host」。设置卡在 Desktop 下切换为宿主摘要，作为备用入口。
+- **统一审批**：两套 surface 复用同一个状态机、`pending-approval.json` 与
+  `/approval`；Desktop 确认卡文案为「批准并重启 Host」，仍必须用户亲手点击。
+
+### 测试 (Tests)
+
+- 新增 Desktop runtime 检测、asar cwd、Desktop spec 的
+  `ELECTRON_RUN_AS_NODE=1` 断言；客户端 bundle 增加 Desktop surface 文案断言。
+
 ## [0.3.0] - 2026-11-23
 
 ### 兼容性

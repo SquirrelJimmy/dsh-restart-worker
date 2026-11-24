@@ -82,6 +82,7 @@ export function restartStatusTool(ctx: ToolContext): ToolDefinition {
           url: { type: 'string' },
           dshVersion: { type: 'string' },
           nodeVersion: { type: 'string' },
+          runtime: { type: 'string' },
           uptimeMs: { type: 'number' },
           command: { type: 'string' },
           helperAlive: { type: 'boolean' },
@@ -116,7 +117,7 @@ export function restartStatusTool(ctx: ToolContext): ToolDefinition {
       const failure = helper.status?.failure?.message ?? ''
       const pending = approval.approval
       const parts = [
-        `宿主：pid ${host.pid}，${host.url}，DSH ${host.dshVersion || '未知版本'}，Node ${host.nodeVersion}`,
+        `宿主（${host.runtime === 'desktop' ? 'Desktop host' : 'Web/CLI'}）：pid ${host.pid}，${host.url}，DSH ${host.dshVersion || '未知版本'}，Node ${host.nodeVersion}`,
         `已运行 ${(host.uptimeMs / 1000).toFixed(0)}s`,
         helper.alive ? phaseLine(helper.status) : '当前没有重启助手在运行',
         failure === '' ? '' : `上次重启失败：${failure}`,
@@ -142,6 +143,7 @@ export function restartStatusTool(ctx: ToolContext): ToolDefinition {
         url: host.url,
         dshVersion: host.dshVersion,
         nodeVersion: host.nodeVersion,
+        runtime: host.runtime,
         uptimeMs: host.uptimeMs,
         command: host.command,
         helperAlive: helper.alive,
@@ -263,6 +265,7 @@ export function restartTool(ctx: ToolContext): ToolDefinition {
         port: ctx.endpoint.port,
         host: ctx.endpoint.host,
         url: ctx.endpoint.url,
+        runtime: ctx.endpoint.runtime,
         source: 'agent',
         reason,
         exitDelayMs,

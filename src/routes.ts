@@ -42,6 +42,7 @@ import {
   tailFile,
   type HelperStatus,
   type HostInfo,
+  type RuntimeKind,
 } from './restart.ts'
 import {
   createApproval,
@@ -76,6 +77,8 @@ export interface RouteContext {
   host: string
   /** Base URL used in links and the helper spec. */
   url: string
+  /** Plain CLI/Web host or DSH Desktop host. */
+  runtime?: RuntimeKind
   /**
    * This process's browser URL carrying its launch token.
    *
@@ -425,7 +428,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
           helperState(config),
           readHistory(8),
           listLogs(8),
-          config.restartMode === 'helper' ? Promise.resolve(null) : launchdInfo(),
+          config.restartMode === 'helper' || deps.runtime === 'desktop' ? Promise.resolve(null) : launchdInfo(),
           readApproval(),
         ])
         const payload: RestartStatusPayload = {
@@ -495,6 +498,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
           port: deps.port,
           host: deps.host,
           url: deps.url,
+          runtime: deps.runtime,
           source,
           reason,
         })
@@ -572,6 +576,7 @@ export function makeRoutes(deps: RouteContext): WebRoute[] {
           port: deps.port,
           host: deps.host,
           url: deps.url,
+          runtime: deps.runtime,
           source: 'user-approved',
           reason,
         })

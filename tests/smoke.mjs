@@ -7,7 +7,7 @@
  */
 
 import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 
 const HOME = await mkdtemp(path.join(tmpdir(), 'dsh-restart-smoke-'))
@@ -29,7 +29,7 @@ const {
   specPath,
   statusPath,
 } = await import('../lib/index.js')
-const { buildSpec, hostInfo, isAlive, launchSignature, newestLogFile, tailFile } = await import('../lib/index.js')
+const { buildSpec, detectRuntime, hostInfo, isAlive, launchSignature, newestLogFile, tailFile } = await import('../lib/index.js')
 
 let passed = 0
 let failed = 0
@@ -158,6 +158,16 @@ console.log('host identity')
 const signature = launchSignature()
 check('launch signature uses the current node', signature.file === process.argv[0], signature.file)
 check('launch signature replays this script', signature.args.includes(process.argv[1]), JSON.stringify(signature.args))
+check('plain Node host is runtime web', signature.runtime === 'web', signature.runtime)
+check('desktop env is detected as desktop', detectRuntime({ ELECTRON_RUN_AS_NODE: '1' }, '', '') === 'desktop')
+check('desktop profile is detected as desktop', detectRuntime({}, '', 'desktop') === 'desktop')
+check('desktop CLI entry is detected as desktop', detectRuntime({}, '/app/dsh-desktop-host/lib/cli.js', '') === 'desktop')
+check('plain CLI stays web', detectRuntime({}, '/app/node_modules/@deepseek-ai/dsh/lib/cli.js', '') === 'web')
+const asarEntry = '/Applications/DSH.app/Contents/Resources/app.asar/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js'
+const desktopSignature = launchSignature('desktop', asarEntry, '/Applications/DSH.app/Contents/Resources/app.asar')
+check('desktop relaunch uses the Electron executable', desktopSignature.file === process.execPath, desktopSignature.file)
+check('desktop relaunch replays the host CLI', desktopSignature.args.includes(asarEntry), JSON.stringify(desktopSignature.args))
+check('desktop asar cwd is a real directory', desktopSignature.cwd === homedir(), desktopSignature.cwd)
 check('isAlive(self)', isAlive(process.pid) === true)
 check('isAlive(bogus pid)', isAlive(999_999) === false)
 
@@ -172,6 +182,21 @@ check('hostInfo finds the helper', info.helperExists === true, info.helperFile)
 check('hostInfo includes node version', info.nodeVersion === process.version)
 check('hostInfo is not flagged as restarted', info.restarted === false)
 check('hostInfo lists the logs dir', info.logsDir === logsDir())
+check('hostInfo reports the web runtime', info.runtime === 'web', info.runtime)
+
+const desktopSpec = await buildSpec({
+  config: normalizeConfig({}),
+  port: 4322,
+  host: '127.0.0.1',
+  url: 'http://127.0.0.1:4322',
+  runtime: 'desktop',
+})
+check('desktop spec keeps its runtime', desktopSpec.runtime === 'desktop', desktopSpec.runtime)
+check(
+  'desktop helper inherits Electron Node mode',
+  desktopSpec.env.ELECTRON_RUN_AS_NODE === '1',
+  desktopSpec.env.ELECTRON_RUN_AS_NODE,
+)
 
 console.log('helper guards')
 

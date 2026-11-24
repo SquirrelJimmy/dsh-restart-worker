@@ -72,6 +72,8 @@ export interface RestartState {
   ack: RestartAck | null
   /** Effective plugin config, once the status endpoint answered. */
   config: RestartConfig | null
+  /** Plain Web/CLI host or DSH Desktop host. */
+  runtime: 'web' | 'desktop'
   /** Set when the page is about to reload itself. */
   reloadAt: number | null
   /** Who asked for the restart. */
@@ -136,6 +138,7 @@ let state: RestartState = {
   helper: null,
   ack: null,
   config: null,
+  runtime: 'web',
   reloadAt: null,
   source: 'web',
   reason: '',
@@ -531,7 +534,7 @@ export async function refreshConfig(): Promise<RestartConfig | null> {
   try {
     const status: StatusPayload = await api.status()
     const authUrl = typeof status.authUrl === 'string' ? status.authUrl : state.authUrl
-    setState({ config: status.config, authUrl })
+    setState({ config: status.config, authUrl, runtime: status.host.runtime })
     return status.config
   } catch (error) {
     if (error instanceof RestartApiError && error.unauthorized) {

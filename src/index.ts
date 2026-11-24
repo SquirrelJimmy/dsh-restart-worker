@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 
 import { loadConfigSync, seedConfigSync, type RestartConfig } from './config.ts'
+import { detectRuntime } from './restart.ts'
 import { makeRoutes, type RouteContext } from './routes.ts'
 import { buildTools } from './tools.ts'
 
@@ -38,7 +39,7 @@ const SECTION_ORDER = 216
 export const RESTART_GUIDANCE =
   '本机已安装 dsh-restart-worker 插件（一键重启 DSH）：装完/更新插件后不必再去终端重启——' +
   'Web GUI 侧边栏的「新会话」行（上传按钮左侧）有「重启」入口、设置页有「重启」卡片，点一下即把重启交给一个**分离的重启助手**（等端口释放后用完全相同的命令重新拉起 DSH），' +
-  '网页会自动重连并刷新；失败时该插件会直接把报错显示出来（页面内置重启遮罩 + 恢复控制台 http://127.0.0.1:3099，含启动日志与检测到的报错行），不必去翻终端日志。' +
+  '网页会自动重连并刷新；Desktop 端使用右侧宿主面板或设置页，只重启 DSH host，不退出桌面应用。失败时该插件会直接把报错显示出来（页面内置重启遮罩 + 恢复控制台 http://127.0.0.1:3099，含启动日志与检测到的报错行），不必去翻终端日志。' +
   '远程页面通过 DSH 自身登录态访问；token 永久入口与恢复控制台仅本机可用，远程 401 需重新登录。' +
   'Agent 侧工具：dsh_restart_status（查看宿主 pid/端口/版本/启动时长/启动命令、重启助手阶段与失败原因、最近重启记录、上次启动日志里的疑似报错行——只读）、' +
   'dsh_restart（真正重启，**必须已获得用户明确同意**并传 confirm: true，否则只返回提示不执行；重启会中断当前回合与连接，网页端自动重连）。' +
@@ -48,6 +49,24 @@ export const RESTART_GUIDANCE =
 
 /** Plugin config, read from the composition row (the JSON file wins once it exists). */
 export type Config = Partial<RestartConfig>
+
+/**
+ * The desktop profile name, when the host exposes one.
+ *
+ * The Electron entry and `ELECTRON_RUN_AS_NODE` are checked by detectRuntime;
+ * this only covers a desktop launcher that starts a plain CLI entry under a
+ * profile service instead.
+ */
+function desktopProfile(ctx: Context): string {
+  try {
+    const profile = ctx.get('profileContext') as { name?: unknown } | undefined
+    if (profile?.name === 'desktop') return 'desktop'
+    if (ctx.get('desktopProfiles') !== undefined) return 'desktop'
+  } catch {
+    /* optional services: absence is normal on a plain web host */
+  }
+  return ''
+}
 
 /**
  * Mount the restart routes, tools and announcement.
@@ -62,6 +81,11 @@ export function apply(ctx: Context, config?: Config): void {
   seedConfigSync(config ?? {})
 
   const announceToAgent = config?.announceToAgent !== false
+  const runtime = detectRuntime(
+    process.env,
+    process.argv[1] ?? '',
+    desktopProfile(ctx),
+  )
 
   /**
    * The current process's launch-token URL, learned from the authentication
@@ -109,6 +133,7 @@ export function apply(ctx: Context, config?: Config): void {
       return `http://127.0.0.1:${this.port}`
     },
     authUrl: connectionAuthUrl,
+    runtime,
   }
 
   /**
@@ -191,6 +216,7 @@ export {
 } from './approval.ts'
 export {
   buildSpec,
+  detectRuntime,
   hostInfo,
   isAlive,
   launchSignature,
@@ -206,6 +232,7 @@ export {
   type LogTail,
   type RestartOutcome,
   type RestartSpec,
+  type RuntimeKind,
 } from './restart.ts'
 export {
   detectLaunchd,

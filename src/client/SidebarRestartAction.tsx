@@ -12,6 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { HocShare, PropsRenderFactories, PropsRuntime, SlotMap } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
+import { DesktopHostPanel } from './DesktopHostPanel.tsx'
 import { RestartPanel } from './RestartPanel.tsx'
 import { useRestartState } from './state.ts'
 import css from './SidebarRestartAction.module.css'
@@ -83,9 +84,10 @@ export function SidebarRestartAction({ wide, children }: SidebarRestartActionPro
 
   const entry = live.config?.entry ?? 'sidebar'
   const enabled = entry !== 'off'
+  const desktop = live.runtime === 'desktop'
 
   useLayoutEffect(() => {
-    if (!open) return
+    if (!open || desktop) return
     const button = buttonRef.current
     if (button === null) return
     const update = () => {
@@ -98,7 +100,7 @@ export function SidebarRestartAction({ wide, children }: SidebarRestartActionPro
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
-  }, [open])
+  }, [desktop, open])
 
   useEffect(() => {
     if (!open) return
@@ -133,11 +135,11 @@ export function SidebarRestartAction({ wide, children }: SidebarRestartActionPro
         ref={buttonRef}
         type="button"
         className={wide ? `${css.trigger} ${css.wide}` : css.trigger}
-        aria-label="重启 DSH"
+        aria-label={desktop ? '重启 DSH Host' : '重启 DSH'}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? 'dsh-restart-popover' : undefined}
-        title="重启 DSH"
+        title={desktop ? '重启 DSH Host' : '重启 DSH'}
         onClick={() => {
           setOpen((current) => !current)
         }}
@@ -145,18 +147,30 @@ export function SidebarRestartAction({ wide, children }: SidebarRestartActionPro
         <RestartIcon size={wide ? 14 : 18} />
         {live.approval !== null ? <span className={css.pendingDot} aria-hidden="true" /> : null}
       </button>
-      {open && position !== null && typeof document !== 'undefined'
+      {open && typeof document !== 'undefined'
         ? createPortal(
-            <div
-              ref={popoverRef}
-              id="dsh-restart-popover"
-              className={css.popover}
-              style={{ left: position.left, top: position.top, width: position.width }}
-              role="dialog"
-              aria-label="重启 DSH"
-            >
-              <RestartPanel variant="floating" onClose={close} />
-            </div>,
+            desktop ? (
+              <div
+                ref={popoverRef}
+                id="dsh-restart-popover"
+                className={css.drawer}
+                role="dialog"
+                aria-label="DSH Host"
+              >
+                <DesktopHostPanel variant="drawer" onClose={close} />
+              </div>
+            ) : position !== null ? (
+              <div
+                ref={popoverRef}
+                id="dsh-restart-popover"
+                className={css.popover}
+                style={{ left: position.left, top: position.top, width: position.width }}
+                role="dialog"
+                aria-label="重启 DSH"
+              >
+                <RestartPanel variant="floating" onClose={close} />
+              </div>
+            ) : null,
             document.body,
           )
         : null}

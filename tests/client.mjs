@@ -142,6 +142,8 @@ check('不再创建旧的 DOM 入口', !code.includes('dsh-restart-entry'))
 check('声明了侧栏槽位', code.includes('sidebar.session.action'))
 check('overlay 使用独立样式命名空间', code.includes('overlay.v2.css') && code.includes('dshrst-root'))
 check('主按钮使用 foreground token 且无未替换占位符', code.includes('label-primary-foreground') && !code.includes('{{'))
+check('包含 Desktop Host surface', code.includes('DSH Host') && code.includes('重启 DSH Host'))
+check('Desktop 明确只重启 host', code.includes('Electron 主进程') && code.includes('不退出桌面应用'))
 
 console.log('\n[2] 外部依赖白名单')
 const requiredModules = [...code.matchAll(/require\(["']([^"']+)["']\)/g)].map((match) => match[1])

@@ -118,6 +118,25 @@
 
 ## 使用
 
+### DSH Desktop
+
+同一套插件在 DSH Desktop 里也能用，但界面是独立的一套，因为宿主模型不同：
+Desktop 把 DSH host 作为子进程运行，所以这里重启的是 **host**，不是 Electron
+桌面应用。窗口和桌面壳不会退出；新 host 应答后页面会自己重连。
+
+- 侧边栏按钮打开右侧宿主抽屉，而不是 Web 的浮层。抽屉里显示宿主 PID、父进程
+  （Electron）PID、端口、版本、运行时长、helper 状态和上次重启；主按钮是
+  「重启 DSH Host」。
+- 设置页卡片在宿主上报 `runtime: desktop` 时切换成同一张宿主摘要，作为侧栏
+  折叠时的备用入口。
+- 待批准的 agent 请求仍复用同一个 `pending-approval.json` 与 `/approval` 路由；
+  确认卡文案是「批准并重启 Host」，仍然必须你亲手点，未点之前宿主不动。
+- 恢复控制台仍仅本机可访问（`http://127.0.0.1:3099`）。远程 Desktop 会话如果
+  登录失效，需要重新登录，不能读取本机 token 永久入口。
+
+App 级更新（Electron 壳、原生依赖）仍需要完全退出再打开；这个按钮只替换 DSH
+host 进程。
+
 ### 你自己要重启
 
 1. 打开「设置 → 插件配置 → Web 插件 → 重启」（或点左侧边栏的重启图标）。
@@ -241,7 +260,9 @@ agent 调 dsh_restart（闸门开着）
 - **要求**：DeepSeek Harness **≥ 0.2.3-alpha.2**（顶层 `engines.dsh`），
   Node **`^24.22.3 || >=26.13.1`**。
 - **构建与测试**：在 **0.2.3-alpha.2** + Node 26.13.1 上通过宿主路由、真实重启助手与
-  构建后的客户端 bundle 测试。尚未把仓库安装进线上 profile，部署前还需更新 profile 并做一次真实重启。
+  构建后的客户端 bundle 测试。Desktop host 路径有单元测试（runtime 检测、asar cwd、
+  `ELECTRON_RUN_AS_NODE`），但尚未在真实 Desktop 构建里点过，仍需一次实机验收。
+  同时尚未把仓库安装进线上 web profile，部署前还需更新 profile 并做一次真实重启。
 - **平台**：只在 **macOS** 上实测过。macOS 且宿主由 launchd 托管时走 `launchctl kickstart -k`；
   其它平台自动落到「分离助手自拉起」路径（代码里对 launchd 有平台守卫，Linux / Windows 未实测）。
   桌面通知也只在 macOS 上发出（其它平台静默跳过，请求本身照样落盘）。
@@ -249,10 +270,11 @@ agent 调 dsh_restart（闸门开着）
 ## 测试
 
 ```sh
-pnpm test        # 274 项断言，八个套件
+pnpm test        # 287 项断言，八个套件
 ```
 
-- `tests/smoke.mjs` — 配置读写与钳制、历史、日志尾部与报错识别、启动签名、宿主信息；
+- `tests/smoke.mjs` — 配置读写与钳制、历史、日志尾部与报错识别、Web/Desktop
+  启动签名、宿主信息；
 - `tests/approval.mjs` — **批准闸门**：落盘权限 0600、新请求替换旧请求、id 不匹配不得执行、
   批准一次性消费（重放不再触发）、拒绝无残留、**过期请求绝不重启**、空状态是 no-op；
 - `tests/helper.mjs` — **真的**跑助手：崩溃路径（捕获退出码、stderr 报错行、控制台页面、

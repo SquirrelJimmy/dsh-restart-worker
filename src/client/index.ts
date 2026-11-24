@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 
 import { mountRestartOverlay } from './overlay.tsx'
-import { RestartPanel } from './RestartPanel.tsx'
+import { RestartSettingsSurface } from './RestartSettingsSurface.tsx'
 import { SidebarRestartAction } from './SidebarRestartAction.tsx'
 import * as restartState from './state.ts'
 
@@ -46,7 +46,7 @@ export function apply(ctx: ClientContext): void {
           order: 338,
           label: () => '重启',
         },
-        RestartPanel,
+        RestartSettingsSurface,
       ),
     )
   } catch (error) {
@@ -68,6 +68,13 @@ export function apply(ctx: ClientContext): void {
     )
   } catch (error) {
     console.warn('[dsh-restart] sidebar action registration failed:', error)
+  }
+  try {
+    // Seed runtime + config once for the whole page, so the sidebar and the
+    // settings card choose Web vs Desktop before their first interaction.
+    void restartState.refreshConfig().catch(() => null)
+  } catch (error) {
+    console.warn('[dsh-restart] initial status read failed:', error)
   }
   try {
     // Poll for agent-filed restart requests for the whole page life: a request

@@ -19,7 +19,8 @@
 import { spawn } from 'node:child_process'
 import { access, chmod, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { constants, realpathSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 import { detectLaunchd, kickCommand, type LaunchdInfo } from './launchd.ts'
 import {
@@ -34,6 +35,9 @@ import {
   type RestartConfig,
   type RestartRecord,
 } from './config.ts'
+
+/** Where the host is running: a plain CLI/Web process or DSH Desktop's host. */
+export type RuntimeKind = 'web' | 'desktop'
 
 /** Everything the panel needs to describe the running host. */
 export interface HostInfo {
@@ -53,6 +57,8 @@ export interface HostInfo {
   command: string
   /** True when this host was itself started by a restart helper. */
   restarted: boolean
+  /** CLI/Web or DSH Desktop host. */
+  runtime: RuntimeKind
   platform: string
   logsDir: string
   statusFile: string
@@ -107,6 +113,8 @@ export interface RestartSpec {
   port: number
   host: string
   url: string
+  /** Runtime this relaunch belongs to. */
+  runtime: RuntimeKind
   file: string
   args: string[]
   cwd: string
@@ -220,19 +228,58 @@ function readProfile(): string {
   return ''
 }
 
+/**
+ * Detect whether this host was started by DSH Desktop.
+ *
+ * Desktop runs the host through Electron's Node mode, so
+ * `ELECTRON_RUN_AS_NODE=1` is the strongest signal. The CLI entry and an
+ * explicit desktop-profile service are kept as fallbacks for launchers that
+ * clear the environment or start the host in a wrapper.
+ */
+export function detectRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+  entry: string = process.argv[1] ?? '',
+  profileName = '',
+): RuntimeKind {
+  if (env.ELECTRON_RUN_AS_NODE === '1') return 'desktop'
+  if (env.DSH_DESKTOP === '1' || env.DSH_DESKTOP === 'true') return 'desktop'
+  if (profileName === 'desktop') return 'desktop'
+  if (entry.includes('dsh-desktop-host') || entry.includes('app.asar')) return 'desktop'
+  return 'web'
+}
+
 /** The relaunch command, exactly as this host was started. */
-export function launchSignature(): { file: string; args: string[]; cwd: string } {
-  const entry = process.argv[1] ?? ''
+export function launchSignature(
+  runtime: RuntimeKind = detectRuntime(),
+  rawEntry: string = process.argv[1] ?? '',
+  cwd: string = process.cwd(),
+): {
+  file: string
+  args: string[]
+  cwd: string
+  runtime: RuntimeKind
+} {
+  const entry = rawEntry !== '' && !isAbsolute(rawEntry) ? resolve(cwd, rawEntry) : rawEntry
+  // Electron's app.asar is readable but not a valid working directory. A real
+  // home directory is safer than inheriting whatever cwd the desktop shell had.
+  const asar = entry.includes('.asar') || cwd.includes('.asar')
   return {
-    file: process.argv[0] ?? process.execPath,
+    file: runtime === 'desktop' ? process.execPath : (process.argv[0] ?? process.execPath),
     args: [...process.execArgv, entry, ...process.argv.slice(2)],
-    cwd: process.cwd(),
+    cwd: runtime === 'desktop' && asar ? homedir() : cwd,
+    runtime,
   }
 }
 
 /** Describe the running host. */
-export async function hostInfo(options: { port: number; host: string; url: string }): Promise<HostInfo> {
-  const signature = launchSignature()
+export async function hostInfo(options: {
+  port: number
+  host: string
+  url: string
+  runtime?: RuntimeKind
+}): Promise<HostInfo> {
+  const runtime = options.runtime ?? detectRuntime()
+  const signature = launchSignature(runtime)
   const helper = helperPath()
   let helperExists = false
   try {
@@ -243,8 +290,10 @@ export async function hostInfo(options: { port: number; host: string; url: strin
   }
   const helperPid = Number(process.env.DSH_RESTART_HELPER_PID ?? '')
   const { config } = await loadConfig()
-  const job = config.restartMode === 'helper' ? null : await launchdInfo()
-  const forced = config.restartMode === 'launchd'
+  // A Desktop host is owned by Electron, not by a launchd job. Restarting it
+  // through launchd would target the desktop app instead of the host child.
+  const job = runtime === 'desktop' || config.restartMode === 'helper' ? null : await launchdInfo()
+  const forced = runtime !== 'desktop' && config.restartMode === 'launchd'
   return {
     pid: process.pid,
     ppid: process.ppid,
@@ -259,6 +308,7 @@ export async function hostInfo(options: { port: number; host: string; url: strin
     profile: readProfile(),
     command: [signature.file, ...signature.args].join(' '),
     restarted: Number.isInteger(helperPid) && helperPid > 0,
+    runtime,
     platform: process.platform,
     logsDir: logsDir(),
     statusFile: statusPath(),
@@ -292,20 +342,26 @@ export async function buildSpec(options: {
   port: number
   host: string
   url: string
+  /** Desktop host vs. plain CLI/Web host. */
+  runtime?: RuntimeKind
   /** Managing launchd job, when the restart will be delegated to it. */
   launchd?: LaunchdInfo | null
 }): Promise<RestartSpec> {
-  const signature = launchSignature()
+  const runtime = options.runtime ?? detectRuntime()
+  const signature = launchSignature(runtime)
   const logFile = join(logsDir(), `${stamp()}-${process.pid}.log`)
   const job = options.launchd ?? null
+  const env = { ...process.env }
+  if (runtime === 'desktop') env.ELECTRON_RUN_AS_NODE = '1'
   return {
     port: options.port,
     host: options.host,
     url: options.url,
+    runtime,
     file: signature.file,
     args: signature.args,
     cwd: signature.cwd,
-    env: { ...process.env },
+    env,
     oldPid: process.pid,
     logFile,
     statusFile: statusPath(),
@@ -365,6 +421,7 @@ export async function requestRestart(options: {
   port: number
   host: string
   url: string
+  runtime?: RuntimeKind
   source: string
   reason: string
   exitDelayMs?: number
@@ -373,8 +430,11 @@ export async function requestRestart(options: {
   await ensureLayout()
   // Ask launchd first: a host it manages must be restarted *by it*, otherwise
   // our own relaunch and the job's relaunch race for the listening port.
-  const job = config.restartMode === 'helper' ? null : await launchdInfo()
-  const forcedLaunchd = config.restartMode === 'launchd'
+  // Desktop is the exception: its host is a child of Electron, and launching a
+  // launchd job would restart the app rather than the host.
+  const desktop = options.runtime === 'desktop'
+  const job = desktop || config.restartMode === 'helper' ? null : await launchdInfo()
+  const forcedLaunchd = !desktop && config.restartMode === 'launchd'
   const spec = await buildSpec({ ...options, launchd: job })
   const mode: 'helper' | 'launchd' = job === null ? 'helper' : 'launchd'
   const specFile = specPath()
@@ -432,7 +492,9 @@ export async function requestRestart(options: {
       detached: true,
       stdio: 'ignore',
       cwd: spec.cwd,
-      env: { ...process.env },
+      // Desktop hosts run their helper through the app binary in Electron's
+      // Node mode; buildSpec has already made that explicit in spec.env.
+      env: { ...spec.env },
     })
     child.unref()
     helperPid = child.pid ?? null
